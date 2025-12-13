@@ -1,7 +1,7 @@
+
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = process.env.API_KEY || ''; 
-// Fallback logic handled in calls if key is missing/invalid for UI stability
+const apiKey = process.env.API_KEY;
 
 let ai: GoogleGenAI | null = null;
 if (apiKey) {
