@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Player, StatType, Equipment, Item, ItemRarity, ItemType } from '../types';
 import { calculateMaxXp, getPlayerTotalStats, calculateSellPrice, canEquipItem } from '../services/gameLogic';
-import { Sword, Shield, Zap, Brain, Clover, Plus, Crown, Hand, Footprints, Coins, CircleDollarSign, Trash2, FlaskConical, Circle, Search, Filter, X } from 'lucide-react';
+import { Sword, Shield, Zap, Brain, Clover, Plus, Crown, Hand, Footprints, Coins, CircleDollarSign, Trash2, FlaskConical, Circle, Search, X } from 'lucide-react';
 import ItemTooltip from './ItemTooltip';
 
 interface CharacterProfileProps {
@@ -100,8 +101,8 @@ const InventoryItem: React.FC<InventoryItemProps> = ({ item, isSelected, onClick
     return (
         <div 
             className={`
-                relative group p-2 rounded-lg border-2 transition-all cursor-pointer
-                ${isSelected ? 'border-yellow-500 bg-slate-700' : 'border-slate-700 bg-slate-800 hover:border-slate-500'}
+                relative group p-2 rounded-lg border-2 transition-all cursor-pointer select-none
+                ${isSelected ? 'border-yellow-500 bg-slate-700 shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'border-slate-700 bg-slate-800 hover:border-slate-500'}
             `}
             onClick={onClick}
             onMouseEnter={() => onHover(item)}
@@ -189,11 +190,11 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
       player.inventory.forEach(item => {
           // Check if item should stack
           if (stackableTypes.includes(item.type)) {
+              // Stack based on Name + Rarity
               const existingIndex = grouped.findIndex(g => g.name === item.name && g.rarity === item.rarity);
               if (existingIndex > -1) {
                   grouped[existingIndex].count += 1;
                   grouped[existingIndex].stackIds.push(item.id);
-                  // Update value to reflect total? No, value per unit usually.
               } else {
                   grouped.push({ ...item, count: 1, stackIds: [item.id] });
               }
@@ -218,11 +219,10 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
 
   // Handle Multi-Item Operations for Stacks
   const handleBatchSell = (displayItem: DisplayItem) => {
-      // Find the actual item object to pass to the original handler (usually just one is processed at a time in game logic)
-      // Logic: Pass one item ID from the stack.
+      // Logic: Sell one instance of the item
       const realItem = player.inventory.find(i => i.id === displayItem.stackIds[0]);
       if(realItem) onSell(realItem);
-      // Reset selection if it was the last one
+      // If last item was sold, clear selection
       if(displayItem.count <= 1) setSelectedInventoryItem(null);
   };
 
@@ -351,7 +351,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
           <div className="bg-slate-800/80 border border-slate-600 rounded-xl flex flex-col h-[500px]">
               
               {/* Toolbar */}
-              <div className="p-4 border-b border-slate-700 flex flex-col md:flex-row gap-3 justify-between items-center">
+              <div className="p-4 border-b border-slate-700 flex flex-col md:flex-row gap-3 justify-between items-center bg-slate-900/50 rounded-t-xl">
                   <div className="flex items-center gap-2 w-full md:w-auto">
                       <h3 className="font-bold text-white flex items-center gap-2"><Coins className="text-yellow-500"/> Çanta</h3>
                       <span className="text-xs text-slate-500">({player.inventory.length} / 100)</span>
@@ -374,7 +374,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
                       <select 
                         value={filterType} 
                         onChange={(e) => setFilterType(e.target.value as any)}
-                        className="bg-slate-900 border border-slate-700 rounded py-1.5 px-2 text-xs text-white outline-none"
+                        className="bg-slate-900 border border-slate-700 rounded py-1.5 px-2 text-xs text-white outline-none cursor-pointer hover:border-slate-500"
                       >
                           <option value="all">Tümü</option>
                           <option value="equip">Ekipman</option>
@@ -385,7 +385,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
               </div>
               
               {/* Inventory Grid */}
-              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar bg-slate-900/20">
                   {processedInventory.length === 0 ? (
                       <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-50">
                           <Coins size={48} className="mb-2"/>
@@ -395,7 +395,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
                       <div className="grid grid-cols-5 md:grid-cols-6 lg:grid-cols-7 gap-2 content-start">
                           {processedInventory.map((item, idx) => (
                               <InventoryItem 
-                                key={idx} // Using Index because ID might be shared in stack render logic, ideally use unique composite key
+                                key={idx} // Using Index because ID might be shared in stack render logic
                                 item={item}
                                 isSelected={selectedInventoryItem?.name === item.name && selectedInventoryItem?.rarity === item.rarity}
                                 onClick={() => setSelectedInventoryItem(item)}
@@ -410,17 +410,20 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
 
           {/* Selected Item Actions Panel */}
           {selectedInventoryItem ? (
-             <div className="bg-slate-800 border border-slate-600 rounded-xl p-4 animate-fade-in flex flex-col md:flex-row gap-4 items-center justify-between">
+             <div className="bg-slate-800 border border-slate-600 rounded-xl p-4 animate-fade-in flex flex-col md:flex-row gap-4 items-center justify-between shadow-lg">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 bg-slate-900 rounded border border-slate-600 flex items-center justify-center">
-                         {/* Icon placeholder logic */}
-                         <Shield className="text-slate-500" />
+                         {/* Dynamic Icon based on type */}
+                         {React.createElement(TYPE_ICONS[selectedInventoryItem.type] || Shield, { size: 24, className: "text-slate-400" })}
                     </div>
                     <div>
-                        <h4 className="font-bold text-white text-sm">{selectedInventoryItem.name}</h4>
+                        <h4 className="font-bold text-white text-sm flex items-center gap-2">
+                            {selectedInventoryItem.name}
+                            <span className="text-[10px] bg-slate-900 px-1 rounded text-slate-400 uppercase">{selectedInventoryItem.rarity}</span>
+                        </h4>
                         <div className="flex gap-2 text-xs text-slate-400">
                             <span>{selectedInventoryItem.type}</span>
-                            <span className="text-yellow-600">{calculateSellPrice(selectedInventoryItem)} Altın</span>
+                            <span className="text-yellow-600 flex items-center gap-1"><Coins size={10}/> {calculateSellPrice(selectedInventoryItem)}</span>
                         </div>
                     </div>
                 </div>
@@ -429,7 +432,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
                     {['weapon', 'shield', 'armor', 'helmet', 'gloves', 'boots', 'ring', 'necklace', 'earring', 'belt'].includes(selectedInventoryItem.type) && (
                          <button 
                             onClick={() => handleSingleEquip(selectedInventoryItem)} 
-                            className="flex-1 md:flex-none px-4 py-2 bg-green-700 hover:bg-green-600 text-white text-xs font-bold rounded flex items-center justify-center gap-2"
+                            className="flex-1 md:flex-none px-4 py-2 bg-green-700 hover:bg-green-600 text-white text-xs font-bold rounded flex items-center justify-center gap-2 transition-colors"
                          >
                             <Shield size={14}/> Kuşan
                          </button>
@@ -438,7 +441,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
                     {selectedInventoryItem.type === 'consumable' && (
                         <button 
                              onClick={() => handleBatchUse(selectedInventoryItem)}
-                             className="flex-1 md:flex-none px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold rounded flex items-center justify-center gap-2"
+                             className="flex-1 md:flex-none px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold rounded flex items-center justify-center gap-2 transition-colors"
                         >
                             <FlaskConical size={14}/> Kullan
                         </button>
@@ -446,28 +449,28 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
 
                     <button 
                         onClick={() => handleBatchSell(selectedInventoryItem)}
-                        className="flex-1 md:flex-none px-4 py-2 bg-yellow-700/50 hover:bg-yellow-700 text-yellow-200 text-xs font-bold rounded flex items-center justify-center gap-2"
+                        className="flex-1 md:flex-none px-4 py-2 bg-yellow-700/20 hover:bg-yellow-700 border border-yellow-700/50 text-yellow-200 text-xs font-bold rounded flex items-center justify-center gap-2 transition-colors"
                     >
                         <CircleDollarSign size={14}/> Sat
                     </button>
 
                     <button 
                         onClick={() => handleBatchDelete(selectedInventoryItem)}
-                        className="flex-1 md:flex-none px-4 py-2 bg-red-900/50 hover:bg-red-800 text-red-300 text-xs font-bold rounded flex items-center justify-center gap-2"
+                        className="flex-1 md:flex-none px-4 py-2 bg-red-900/20 hover:bg-red-800 border border-red-900/50 text-red-300 text-xs font-bold rounded flex items-center justify-center gap-2 transition-colors"
                     >
                         <Trash2 size={14}/> Sil
                     </button>
 
                     <button 
                         onClick={() => setSelectedInventoryItem(null)}
-                        className="px-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded"
+                        className="px-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
                     >
                         <X size={16} />
                     </button>
                 </div>
              </div>
           ) : (
-            <div className="bg-slate-800/50 border border-slate-700 border-dashed rounded-xl p-6 text-center text-slate-500 text-sm">
+            <div className="bg-slate-800/30 border border-slate-700 border-dashed rounded-xl p-4 text-center text-slate-500 text-xs h-[84px] flex items-center justify-center">
                 İşlem yapmak için çantadan bir eşya seçin.
             </div>
           )}

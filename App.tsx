@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Player, StatType, ExpeditionDuration, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, Role, EnemyTemplate } from './types';
+import { Player, StatType, ExpeditionDuration, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, Role, EnemyTemplate, CombatReport } from './types';
 import { calculateMaxHp, calculateMaxXp, calculateMaxMp, generateRandomItem, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem } from './services/gameLogic';
 import { generateExpeditionStory } from './services/geminiService';
 import { supabase, savePlayerProfile, loadPlayerProfile } from './services/supabase';
@@ -293,7 +293,7 @@ function App() {
             reportLog.push(`Ağır yaralandın.`);
         }
 
-        let p = {
+        let p: Player = {
             ...prev,
             currentXp: prev.currentXp + xpGain,
             gold: prev.gold + goldGain,
@@ -329,7 +329,7 @@ function App() {
     }
 
     setPlayer(prev => {
-        let p = {
+        let p: Player = {
             ...prev,
             gold: prev.gold + gold,
             currentXp: prev.currentXp + xp,
@@ -528,7 +528,6 @@ function App() {
         onClose={() => setShowAdmin(false)}
         users={[player]} 
         onBanUser={() => {}}
-        onDeleteUser={() => {}}
         onEditUser={(id, name, gold, role) => setPlayer(p => ({...p, name, gold, role}))}
         onGivePremium={(id, days) => setPlayer(p => ({...p, premiumUntil: Date.now() + (days * 86400000)}))}
         onAddItemToPlayer={(id, item) => setPlayer(p => ({...p, inventory: [...p.inventory, item]}))}
