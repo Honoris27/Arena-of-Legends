@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { Item, BlacksmithJob } from '../types';
+import { Item, BlacksmithJob, Stats } from '../types';
 import { calculateUpgradeCost, calculateSuccessRate, calculateSalvageReturn, generateDynamicItem, INITIAL_BASE_ITEMS, INITIAL_MODIFIERS, INITIAL_MATERIALS, getFragmentCount, getBlacksmithTime, formatTime } from '../services/gameLogic';
-import { Hammer, Coins, ArrowUp, Recycle, Anvil, Clock, Check } from 'lucide-react';
+import { Hammer, Coins, ArrowUp, Recycle, Anvil, Clock, Check, ArrowRight } from 'lucide-react';
 import ItemTooltip from './ItemTooltip';
 
 interface BlacksmithProps {
@@ -100,20 +100,69 @@ const UpgradePanel: React.FC<{ inventory: Item[], playerGold: number, onStartJob
 
     return (
         <div className="flex gap-8">
-            <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-900/50 rounded-xl border border-slate-700">
+            <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-900/50 rounded-xl border border-slate-700 relative overflow-hidden">
                  {selectedItem ? (
-                     <div className="w-full max-w-sm flex flex-col items-center">
-                         <div className="transform scale-110 mb-4"><ItemTooltip item={selectedItem} fixed /></div>
-                         <div className="text-yellow-500 font-bold mb-2">{cost} Altın</div>
-                         <div className="text-slate-400 text-xs mb-4"><Clock size={12} className="inline"/> {formatTime(duration)}</div>
-                         <button onClick={handleUpgrade} disabled={playerGold < cost} className="w-full py-2 bg-orange-600 hover:bg-orange-500 text-white rounded font-bold">BAŞLAT</button>
+                     <div className="w-full flex flex-col items-center">
+                         <div className="flex items-center justify-center gap-8 mb-8 w-full">
+                             {/* Current Item Card */}
+                             <div className="bg-slate-800 p-4 rounded-xl border-2 border-slate-600 w-48 flex flex-col items-center opacity-80">
+                                 <h4 className="text-sm font-bold text-slate-300 mb-2">Şu An</h4>
+                                 <div className="text-white font-bold mb-2">{selectedItem.name} +{selectedItem.upgradeLevel}</div>
+                                 <div className="space-y-1 text-xs w-full">
+                                     {Object.entries(selectedItem.stats).map(([key, val]) => (
+                                         <div key={key} className="flex justify-between text-slate-400">
+                                             <span>{key}</span> <span>{val}</span>
+                                         </div>
+                                     ))}
+                                 </div>
+                             </div>
+
+                             <ArrowRight className="text-orange-500 animate-pulse" size={32} />
+
+                             {/* Next Level Card */}
+                             <div className="bg-slate-800 p-4 rounded-xl border-2 border-orange-500 w-48 flex flex-col items-center shadow-[0_0_20px_rgba(249,115,22,0.2)]">
+                                 <h4 className="text-sm font-bold text-orange-400 mb-2">Sonraki Seviye</h4>
+                                 <div className="text-white font-bold mb-2">{selectedItem.name} <span className="text-green-400">+{selectedItem.upgradeLevel + 1}</span></div>
+                                 <div className="space-y-1 text-xs w-full">
+                                     {Object.entries(selectedItem.stats).map(([key, val]) => {
+                                         const nextVal = Math.ceil(((val as number) || 0) * 1.1) + 1;
+                                         return (
+                                             <div key={key} className="flex justify-between">
+                                                 <span className="text-slate-400">{key}</span> 
+                                                 <span className="text-green-400 font-bold">{nextVal} <span className="text-[9px]">(+{nextVal - (val as number)})</span></span>
+                                             </div>
+                                         );
+                                     })}
+                                 </div>
+                             </div>
+                         </div>
+
+                         <div className="bg-black/30 p-4 rounded-lg w-full max-w-sm mb-4">
+                             <div className="flex justify-between text-sm mb-1">
+                                 <span className="text-slate-400">Geliştirme Ücreti:</span>
+                                 <span className="text-yellow-500 font-bold">{cost} Altın</span>
+                             </div>
+                             <div className="flex justify-between text-sm mb-1">
+                                 <span className="text-slate-400">Süre:</span>
+                                 <span className="text-white font-mono"><Clock size={12} className="inline mr-1"/>{formatTime(duration)}</span>
+                             </div>
+                             <div className="flex justify-between text-sm">
+                                 <span className="text-slate-400">Başarı Şansı:</span>
+                                 <span className="text-green-400 font-bold">%100 (Şimdilik)</span>
+                             </div>
+                         </div>
+
+                         <button onClick={handleUpgrade} disabled={playerGold < cost} className="w-full max-w-sm py-3 bg-orange-600 hover:bg-orange-500 text-white rounded font-bold shadow-lg flex items-center justify-center gap-2">
+                             <Hammer size={18}/> GELİŞTİRMEYİ BAŞLAT
+                         </button>
                      </div>
-                 ) : <div className="text-slate-500">Sağdan eşya seç.</div>}
+                 ) : <div className="text-slate-500">Sağdaki listeden geliştirilecek bir eşya seçin.</div>}
             </div>
             <div className="w-1/3 bg-slate-900 border border-slate-700 p-4 h-[400px] overflow-y-auto grid grid-cols-2 gap-2 content-start">
                 {upgradeableItems.map(i => (
-                    <div key={i.id} onClick={() => setSelectedItem(i)} className="p-2 border border-slate-700 hover:border-orange-500 cursor-pointer rounded text-xs">
-                        {i.name} +{i.upgradeLevel}
+                    <div key={i.id} onClick={() => setSelectedItem(i)} className={`p-2 border cursor-pointer rounded text-xs transition-colors ${selectedItem?.id === i.id ? 'border-orange-500 bg-slate-800' : 'border-slate-700 hover:border-slate-500'}`}>
+                        <div className="font-bold text-slate-200 truncate">{i.name}</div>
+                        <div className="text-yellow-600">+{i.upgradeLevel}</div>
                     </div>
                 ))}
             </div>

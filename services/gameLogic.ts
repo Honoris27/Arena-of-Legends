@@ -1,15 +1,37 @@
 
-import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus } from '../types';
+import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus, GameEvent } from '../types';
 
 export const isPremium = (player: Player): boolean => {
     return player.premiumUntil > Date.now();
 };
 
-export const getExpeditionConfig = (player: Player) => {
+export const checkEventStatus = (event: GameEvent | null): GameEvent | null => {
+    if (!event) return null;
+    const now = Date.now();
+    
+    // If it has dates, control isActive automatically
+    if (event.startTime && event.endTime) {
+        if (now >= event.startTime && now <= event.endTime) {
+            return { ...event, isActive: true };
+        } else {
+            return { ...event, isActive: false };
+        }
+    }
+    
+    return event;
+};
+
+export const getExpeditionConfig = (player: Player, activeEvent?: GameEvent | null) => {
     const premium = isPremium(player);
+    // Only apply multipliers if event is active
+    const eventTimeMult = (activeEvent && activeEvent.isActive) ? activeEvent.expeditionTimeMultiplier : 1.0;
+    
+    const baseCooldown = premium ? 60 : 120;
+    const finalCooldown = Math.max(10, Math.floor(baseCooldown * eventTimeMult));
+
     return {
         maxPoints: premium ? 23 : 15, 
-        cooldownSeconds: premium ? 60 : 120, 
+        cooldownSeconds: finalCooldown, 
         regenSeconds: 15 * 60 
     };
 };
@@ -39,14 +61,12 @@ export const getPlayerTotalStats = (player: Player): Stats => {
   
   Object.values(player.equipment).forEach((item) => {
     if (item) {
-        // Add basic stats
         if (item.stats.STR) totalStats.STR += item.stats.STR;
         if (item.stats.AGI) totalStats.AGI += item.stats.AGI;
         if (item.stats.VIT) totalStats.VIT += item.stats.VIT;
         if (item.stats.INT) totalStats.INT += item.stats.INT;
         if (item.stats.LUK) totalStats.LUK += item.stats.LUK;
         
-        // Add Bonus Stats (Flat only for basic view, percentages applied in combat calc)
         if (item.bonuses) {
             item.bonuses.forEach(b => {
                 if (b.mode === 'GLOBAL' && b.type === 'FLAT' && ['STR','AGI','VIT','INT','LUK'].includes(b.stat)) {
@@ -111,11 +131,73 @@ export const generateEnemy = (playerLevel: number, isBoss: boolean = false): Ene
 // --- DATA ---
 
 export const INITIAL_BASE_ITEMS: BaseItem[] = [
-    { id: 'bi1', name: 'Kılıç', type: 'weapon', minLevel: 1, baseStats: { STR: 5 } },
-    { id: 'bi2', name: 'Balta', type: 'weapon', minLevel: 3, baseStats: { STR: 8 } },
-    { id: 'bi10', name: 'Deri Zırh', type: 'armor', minLevel: 1, baseStats: { VIT: 4 } },
-    { id: 'bi11', name: 'Bronz Zırh', type: 'armor', minLevel: 5, baseStats: { VIT: 8 } },
-    { id: 'bi40', name: 'Bronz Yüzük', type: 'ring', minLevel: 1, baseStats: { LUK: 2 } },
+    // 1.1 Weapons
+    { id: 'w1', name: 'Kılıç', type: 'weapon', minLevel: 1, baseStats: { STR: 5 } },
+    { id: 'w2', name: 'Balta', type: 'weapon', minLevel: 3, baseStats: { STR: 8 } },
+    { id: 'w3', name: 'Mızrak', type: 'weapon', minLevel: 5, baseStats: { STR: 7, AGI: 2 } },
+    { id: 'w4', name: 'Hançer', type: 'weapon', minLevel: 2, baseStats: { STR: 3, AGI: 5 } },
+    { id: 'w5', name: 'Topuz', type: 'weapon', minLevel: 4, baseStats: { STR: 10 } },
+    { id: 'w6', name: 'Çekiç', type: 'weapon', minLevel: 6, baseStats: { STR: 12 } },
+    { id: 'w7', name: 'Gladyatör Kılıcı', type: 'weapon', minLevel: 10, baseStats: { STR: 15, VIT: 2 } },
+    { id: 'w8', name: 'Roma Kılıcı', type: 'weapon', minLevel: 15, baseStats: { STR: 20, AGI: 5 } },
+
+    // 1.2 Helmets
+    { id: 'h1', name: 'Deri Başlık', type: 'helmet', minLevel: 1, baseStats: { VIT: 2 } },
+    { id: 'h2', name: 'Bronz Miğfer', type: 'helmet', minLevel: 5, baseStats: { VIT: 5 } },
+    { id: 'h3', name: 'Demir Miğfer', type: 'helmet', minLevel: 10, baseStats: { VIT: 8, STR: 1 } },
+    { id: 'h4', name: 'Çelik Miğfer', type: 'helmet', minLevel: 15, baseStats: { VIT: 12, STR: 2 } },
+    { id: 'h5', name: 'Gladyatör Miğferi', type: 'helmet', minLevel: 20, baseStats: { VIT: 18, STR: 4 } },
+
+    // 1.3 Armors
+    { id: 'a1', name: 'Deri Zırh', type: 'armor', minLevel: 1, baseStats: { VIT: 4 } },
+    { id: 'a2', name: 'Bronz Zırh', type: 'armor', minLevel: 5, baseStats: { VIT: 8 } },
+    { id: 'a3', name: 'Demir Zırh', type: 'armor', minLevel: 10, baseStats: { VIT: 12 } },
+    { id: 'a4', name: 'Zincir Zırh', type: 'armor', minLevel: 12, baseStats: { VIT: 15, AGI: -1 } },
+    { id: 'a5', name: 'Çelik Zırh', type: 'armor', minLevel: 15, baseStats: { VIT: 20 } },
+    { id: 'a6', name: 'Gladyatör Zırhı', type: 'armor', minLevel: 20, baseStats: { VIT: 30, STR: 5 } },
+
+    // 1.4 Shields
+    { id: 's1', name: 'Tahta Kalkan', type: 'shield', minLevel: 1, baseStats: { VIT: 3 } },
+    { id: 's2', name: 'Deri Kalkan', type: 'shield', minLevel: 3, baseStats: { VIT: 5 } },
+    { id: 's3', name: 'Bronz Kalkan', type: 'shield', minLevel: 5, baseStats: { VIT: 8 } },
+    { id: 's4', name: 'Demir Kalkan', type: 'shield', minLevel: 10, baseStats: { VIT: 12 } },
+    { id: 's5', name: 'Çelik Kalkan', type: 'shield', minLevel: 15, baseStats: { VIT: 18 } },
+    { id: 's6', name: 'Gladyatör Kalkanı', type: 'shield', minLevel: 20, baseStats: { VIT: 25, STR: 2 } },
+
+    // 1.5 Gloves
+    { id: 'g1', name: 'Deri Eldiven', type: 'gloves', minLevel: 1, baseStats: { AGI: 1, VIT: 1 } },
+    { id: 'g2', name: 'Bronz Eldiven', type: 'gloves', minLevel: 5, baseStats: { AGI: 2, VIT: 2 } },
+    { id: 'g3', name: 'Demir Eldiven', type: 'gloves', minLevel: 10, baseStats: { AGI: 3, VIT: 4 } },
+    { id: 'g4', name: 'Çelik Eldiven', type: 'gloves', minLevel: 15, baseStats: { AGI: 5, VIT: 6 } },
+    { id: 'g5', name: 'Savaş Eldiveni', type: 'gloves', minLevel: 20, baseStats: { AGI: 8, STR: 2 } },
+
+    // 1.6 Boots
+    { id: 'b1', name: 'Deri Çizme', type: 'boots', minLevel: 1, baseStats: { AGI: 2 } },
+    { id: 'b2', name: 'Bronz Çizme', type: 'boots', minLevel: 5, baseStats: { AGI: 4, VIT: 1 } },
+    { id: 'b3', name: 'Demir Çizme', type: 'boots', minLevel: 10, baseStats: { AGI: 6, VIT: 2 } },
+    { id: 'b4', name: 'Çelik Çizme', type: 'boots', minLevel: 15, baseStats: { AGI: 8, VIT: 3 } },
+    { id: 'b5', name: 'Gladyatör Sandalı', type: 'boots', minLevel: 20, baseStats: { AGI: 12 } },
+
+    // 1.7 Rings
+    { id: 'r1', name: 'Bronz Yüzük', type: 'ring', minLevel: 1, baseStats: { LUK: 1 } },
+    { id: 'r2', name: 'Demir Yüzük', type: 'ring', minLevel: 5, baseStats: { LUK: 2, STR: 1 } },
+    { id: 'r3', name: 'Gümüş Yüzük', type: 'ring', minLevel: 10, baseStats: { LUK: 4, INT: 2 } },
+    { id: 'r4', name: 'Altın Yüzük', type: 'ring', minLevel: 15, baseStats: { LUK: 6, STR: 2 } },
+    { id: 'r5', name: 'Arena Yüzüğü', type: 'ring', minLevel: 20, baseStats: { LUK: 10, STR: 5 } },
+
+    // 1.8 Necklaces
+    { id: 'n1', name: 'Deri Kolye', type: 'necklace', minLevel: 1, baseStats: { INT: 1 } },
+    { id: 'n2', name: 'Bronz Kolye', type: 'necklace', minLevel: 5, baseStats: { INT: 2, VIT: 1 } },
+    { id: 'n3', name: 'Gümüş Kolye', type: 'necklace', minLevel: 10, baseStats: { INT: 4, VIT: 2 } },
+    { id: 'n4', name: 'Altın Kolye', type: 'necklace', minLevel: 15, baseStats: { INT: 6, LUK: 2 } },
+    { id: 'n5', name: 'Arena Kolyesi', type: 'necklace', minLevel: 20, baseStats: { INT: 10, VIT: 5 } },
+
+    // 1.9 Belts
+    { id: 'bl1', name: 'Deri Kemer', type: 'belt', minLevel: 1, baseStats: { VIT: 2 } },
+    { id: 'bl2', name: 'Bronz Kemer', type: 'belt', minLevel: 5, baseStats: { VIT: 4, STR: 1 } },
+    { id: 'bl3', name: 'Demir Kemer', type: 'belt', minLevel: 10, baseStats: { VIT: 6, STR: 2 } },
+    { id: 'bl4', name: 'Çelik Kemer', type: 'belt', minLevel: 15, baseStats: { VIT: 8, STR: 3 } },
+    { id: 'bl5', name: 'Gladyatör Kemeri', type: 'belt', minLevel: 20, baseStats: { VIT: 12, STR: 5 } },
 ];
 
 export const INITIAL_MATERIALS: ItemMaterial[] = [
@@ -338,11 +420,14 @@ export const upgradeItem = (item: Item): Item => {
     return { ...item, stats: newStats, upgradeLevel: item.upgradeLevel + 1, value: Math.floor(item.value * 1.2) };
 };
 
-export const calculateSalvageReturn = (item: Item): { prefixFrag: number, suffixFrag: number } => {
+export const calculateSalvageReturn = (item: Item, activeEvent?: GameEvent | null): { prefixFrag: number, suffixFrag: number } => {
     const base = item.rarity === 'legendary' ? 10 : item.rarity === 'epic' ? 5 : item.rarity === 'rare' ? 3 : 1;
+    // Check if event is strictly active
+    const mult = (activeEvent && activeEvent.isActive) ? activeEvent.salvageYieldMultiplier : 1.0;
+    
     return { 
-        prefixFrag: Math.floor(base + Math.random() * 3), 
-        suffixFrag: Math.floor(base + Math.random() * 3) 
+        prefixFrag: Math.floor((base + Math.random() * 3) * mult), 
+        suffixFrag: Math.floor((base + Math.random() * 3) * mult) 
     };
 };
 

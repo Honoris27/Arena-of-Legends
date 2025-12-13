@@ -19,7 +19,7 @@ export type GameMode = 'GLOBAL' | 'ARENA' | 'EXPEDITION' | 'BOSS';
 // --- COMPLEX MODIFIER TYPES (GDD) ---
 
 export interface ModifierBonus {
-    stat: StatType | 'CRIT_CHANCE' | 'CRIT_DAMAGE' | 'ARMOR_PEN' | 'LIFESTEAL' | 'DODGE' | 'DAMAGE_REDUCTION';
+    stat: StatType | 'CRIT_CHANCE' | 'CRIT_DAMAGE' | 'ARMOR_PEN' | 'LIFESTEAL' | 'DODGE' | 'DAMAGE_REDUCTION' | 'GOLD_GAIN' | 'XP_GAIN' | 'DROP_CHANCE';
     value: number;
     type: BonusType;
     mode: GameMode;
@@ -52,6 +52,23 @@ export interface ItemMaterial {
     levelReq: number;
     statMultiplier: number;
     rarity: ItemRarity;
+}
+
+// --- EVENT SYSTEM ---
+export interface GameEvent {
+    id: string;
+    title: string;
+    isActive: boolean;
+    startTime?: number; // Timestamp
+    endTime?: number;   // Timestamp
+    // Multipliers (1.0 = normal)
+    xpMultiplier: number;
+    goldMultiplier: number;
+    dropRateMultiplier: number;
+    expeditionTimeMultiplier: number; // e.g. 0.5 for half time
+    scrollDropChance: number; // Bonus probability e.g. 0.1 for +10%
+    salvageYieldMultiplier: number; 
+    color?: string;
 }
 
 // -------------------------------------

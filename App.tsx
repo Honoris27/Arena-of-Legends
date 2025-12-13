@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Player, StatType, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, Toast, BlacksmithJob } from './types';
-import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn } from './services/gameLogic';
+import { Player, StatType, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, Toast, BlacksmithJob, ItemRarity, ItemType, GameEvent } from './types';
+import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus } from './services/gameLogic';
 import { supabase, savePlayerProfile, loadPlayerProfile } from './services/supabase';
 import CharacterProfile from './components/CharacterProfile';
 import Expedition from './components/Expedition';
@@ -14,6 +14,7 @@ import Market from './components/Market';
 import Guide from './components/Guide';
 import Mailbox from './components/Mailbox';
 import ToastSystem from './components/ToastSystem';
+import EventBanner from './components/EventBanner';
 import { User, Map, Swords, Coins, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown, Mail } from 'lucide-react';
 
 const INITIAL_REGIONS: Region[] = [
@@ -71,6 +72,7 @@ function App() {
   const [locations, setLocations] = useState<ExpeditionLocation[]>(INITIAL_LOCATIONS);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [enemyTemplates, setEnemyTemplates] = useState<EnemyTemplate[]>([]);
+  const [activeEvent, setActiveEvent] = useState<GameEvent | null>(null);
   
   // Game Data State
   const [baseItems, setBaseItems] = useState<BaseItem[]>(INITIAL_BASE_ITEMS);
@@ -137,10 +139,13 @@ function App() {
   useEffect(() => {
     if (!session || loading) return;
     const interval = setInterval(() => {
+        // Event Time Check
+        setActiveEvent(prev => checkEventStatus(prev));
+
         setPlayer(prev => {
             // Regen Points
             const now = Date.now();
-            const config = getExpeditionConfig(prev);
+            const config = getExpeditionConfig(prev, activeEvent);
             let updated = { ...prev };
             
             if (prev.expeditionPoints < prev.maxExpeditionPoints && now >= prev.nextPointRegenTime) {
@@ -151,7 +156,7 @@ function App() {
         });
     }, 1000);
     return () => clearInterval(interval);
-  }, [session, loading]);
+  }, [session, loading, activeEvent]); 
 
   useEffect(() => {
       if (!session || loading) return;
@@ -169,28 +174,34 @@ function App() {
         throw new Error("Low HP");
     }
 
-    let xpGain = Math.floor((10 + Math.random() * 10) * rewardMultiplier);
-    let goldGain = Math.floor((5 + Math.random() * 10) * rewardMultiplier);
+    // Apply Event Multipliers
+    const evt = checkEventStatus(activeEvent);
+    const xpMult = (evt && evt.isActive) ? evt.xpMultiplier : 1.0;
+    const goldMult = (evt && evt.isActive) ? evt.goldMultiplier : 1.0;
+    const dropMult = (evt && evt.isActive) ? evt.dropRateMultiplier : 1.0;
+    const scrollBonus = (evt && evt.isActive) ? evt.scrollDropChance : 0;
+
+    let xpGain = Math.floor(((10 + Math.random() * 10) * rewardMultiplier) * xpMult);
+    let goldGain = Math.floor(((5 + Math.random() * 10) * rewardMultiplier) * goldMult);
     const earnedItems: Item[] = [];
 
     const roll = Math.random();
-    if (roll < 0.25) {
-        // Drop level range +/- 2 of mob (which is ~player level)
+    
+    // Adjusted drop logic with event multiplier
+    if (roll < (0.25 * dropMult)) {
         const dropLvl = Math.max(1, player.level + Math.floor(Math.random() * 5) - 2);
         const item = generateDynamicItem(dropLvl, baseItems, materials, modifiers);
         earnedItems.push(item);
-    } else if (roll < 0.35) {
-        // Scroll drop
+    } else if (roll < (0.35 * dropMult + scrollBonus)) {
         const randMod = modifiers[Math.floor(Math.random() * modifiers.length)];
         earnedItems.push(generateScroll(randMod));
-    } else if (roll < 0.60) {
-        // Fragments
+    } else if (roll < (0.60 * dropMult)) {
         if (Math.random() > 0.5) earnedItems.push(generateFragment('prefix', Math.floor(Math.random() * 2) + 1));
         else earnedItems.push(generateFragment('suffix', Math.floor(Math.random() * 2) + 1));
     }
 
     setPlayer(prev => {
-        const config = getExpeditionConfig(prev);
+        const config = getExpeditionConfig(prev, activeEvent);
         let newInv = [...prev.inventory];
         earnedItems.forEach(i => newInv = addToInventory(newInv, i));
 
@@ -221,11 +232,7 @@ function App() {
           if (job.type === 'upgrade' || job.type === 'salvage') {
               if (job.item) newInv = removeFromInventory(newInv, job.item.id);
           }
-          if (job.type === 'craft') {
-               // Cost handling (fragments removal) handled here or inside component? 
-               // For simplicity, let's assume component passes cost to reduce
-          }
-
+          
           return {
               ...prev,
               gold: prev.gold - cost,
@@ -244,12 +251,11 @@ function App() {
       let frags: {prefix: number, suffix: number} | null = null;
 
       if (job.type === 'upgrade' && job.item) {
-          // Success logic rolled here or at start? Let's roll at start for safety but apply now
-          // For now, simplify: Upgrade always succeeds in queue for this demo, or we store 'success' bool in job
           newItem = upgradeItem(job.item);
           addToast("Eşya geliştirildi!", "success");
       } else if (job.type === 'salvage' && job.item) {
-           const r = calculateSalvageReturn(job.item);
+           // Apply Event Salvage Multiplier
+           const r = calculateSalvageReturn(job.item, activeEvent);
            frags = { prefix: r.prefixFrag, suffix: r.suffixFrag };
            addToast(`Kazanıldı: ${r.prefixFrag} Ön Ek, ${r.suffixFrag} Son Ek Parçası`, "success");
       } else if (job.type === 'craft' && job.resultItem) {
@@ -301,7 +307,35 @@ function App() {
           setPlayer(p => ({ ...p, learnedModifiers: [...p.learnedModifiers, item.linkedModifierId!], inventory: removeFromInventory(p.inventory, item.id) }));
           addToast("Yeni özellik öğrenildi!", "success");
       }
-      // Other consumables...
+  };
+
+  const handleMarketBuy = (item: MarketItem) => {
+    if (player.gold < item.price) {
+        addToast("Yetersiz altın!", "error");
+        return;
+    }
+    // ... (rest of market buy logic unchanged) ...
+    // Simplifying duplication here for the patch
+    let newInv = [...player.inventory];
+    let newHp = player.hp;
+    let newPremium = player.premiumUntil;
+    let msg = "Satın alındı.";
+
+    if (item.type === 'premium') {
+        newPremium = Math.max(Date.now(), player.premiumUntil) + (15 * 86400000);
+    } else if (item.effect === 'heal') {
+        newHp = player.maxHp;
+    } else if (item.effect?.startsWith('box')) {
+        const item = generateDynamicItem(player.level, baseItems, materials, modifiers);
+        newInv = addToInventory(newInv, item);
+        msg = `Kazanıldı: ${item.name}`;
+    } else {
+        const i: Item = { id: Date.now().toString(), name: item.name, type: item.type as ItemType, rarity: 'common', stats: {}, value: 10, count: 1, upgradeLevel: 0 };
+        newInv = addToInventory(newInv, i);
+    }
+
+    setPlayer(p => ({...p, gold: p.gold - item.price, inventory: newInv, hp: newHp, premiumUntil: newPremium}));
+    addToast(msg, "success");
   };
 
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-yellow-500 font-cinzel text-xl animate-pulse">Arena Yükleniyor...</div>;
@@ -311,6 +345,8 @@ function App() {
     <div className="min-h-screen bg-slate-900 text-slate-200 pb-20 md:pb-0 font-sans selection:bg-yellow-500/30">
       <ToastSystem toasts={toasts} removeToast={removeToast} />
       
+      {activeEvent && activeEvent.isActive && <EventBanner event={activeEvent} />}
+
       <AdminPanel 
         isOpen={showAdmin} 
         onClose={() => setShowAdmin(false)}
@@ -321,9 +357,25 @@ function App() {
         modifiers={modifiers} setModifiers={setModifiers}
         regions={regions} onAddRegion={r => setRegions(prev => [...prev, r])}
         locations={locations} onAddLocation={l => setLocations(p => [...p, l])} onDeleteLocation={id => setLocations(p => p.filter(l => l.id !== id))}
-        onBanUser={() => {}} onEditUser={() => {}} onGivePremium={() => {}} onAddAnnouncement={() => {}}
+        onBanUser={() => setPlayer(DEFAULT_PLAYER)} 
+        onEditUser={(id, updates) => setPlayer(p => ({...p, ...updates}))} 
+        onGivePremium={(id, days) => setPlayer(p => ({...p, premiumUntil: Date.now() + days*86400000}))} 
+        onAddAnnouncement={(ann) => setAnnouncements(prev => [ann, ...prev])}
         enemyTemplates={enemyTemplates} onAddEnemyTemplate={() => {}} onDeleteEnemyTemplate={() => {}}
-        currentPlayerId={player.id} onAddGold={() => {}} onLevelUp={() => {}} onHeal={() => {}}
+        currentPlayerId={player.id} 
+        activeEvent={activeEvent} onUpdateEvent={setActiveEvent}
+        onAddGold={() => setPlayer(p => ({...p, gold: p.gold + 1000}))} onLevelUp={() => setPlayer(p => ({...p, currentXp: p.maxXp}))} onHeal={() => setPlayer(p => ({...p, hp: p.maxHp}))}
+      />
+
+      <Guide isOpen={showGuide} onClose={() => setShowGuide(false)} />
+      
+      <Mailbox 
+        isOpen={showMailbox} 
+        onClose={() => setShowMailbox(false)}
+        player={player}
+        onDeleteMessage={id => setPlayer(p => ({...p, messages: p.messages.filter(m => m.id !== id)}))}
+        onDeleteReport={id => setPlayer(p => ({...p, reports: p.reports.filter(r => r.id !== id)}))}
+        announcements={announcements}
       />
 
       <header className="sticky top-0 z-50 bg-slate-900/95 backdrop-blur border-b border-slate-700 h-16 flex items-center justify-between px-4 md:px-8 shadow-lg">
@@ -337,14 +389,23 @@ function App() {
                 <Coins size={16} className="text-yellow-500" />
                 <span className="font-mono font-bold text-yellow-100">{player.gold}</span>
             </div>
+             
+             <button onClick={() => setShowMailbox(true)} className="relative text-slate-400 hover:text-white">
+                <Mail size={24}/>
+                {(player.messages.length > 0 || player.reports.length > 0) && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+                )}
+            </button>
+
              <button onClick={() => setShowAdmin(true)} className="text-slate-400 hover:text-white"><Settings size={20} /></button>
              <button onClick={handleLogout} className="text-red-400 hover:text-red-300"><LogOut size={20} /></button>
         </div>
       </header>
 
-      <div className="flex max-w-7xl mx-auto h-[calc(100vh-64px)] overflow-hidden">
+      <div className="flex max-w-7xl mx-auto h-[calc(100vh-64px-40px)] overflow-hidden"> 
+        {/* Adjusted height to account for banner if present, though banner is sticky/relative above header usually */}
         <nav className="hidden md:flex w-64 flex-col border-r border-slate-700 bg-slate-800/50 p-4 gap-2">
-            {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Swords, label: 'Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }].map(item => (
+            {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Swords, label: 'Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
                 <button key={item.id} onClick={() => setCurrentView(item.id as View)} className={`flex items-center gap-3 p-3 rounded-lg transition-all ${currentView === item.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-700 text-slate-400'}`}>
                     <item.icon size={20} /> {item.label}
                 </button>
@@ -382,9 +443,31 @@ function App() {
                     onClaimJob={handleClaimJob}
                 />
             )}
-            {/* Other views omitted for brevity but should be wired similarly */}
+            {currentView === 'arena' && (
+                <Arena 
+                    player={player} 
+                    onWin={(g, x) => { setPlayer(p => ({...p, gold: p.gold + g, currentXp: p.currentXp + x})); setWins(w => w+1); }}
+                    onLoss={() => setPlayer(p => ({...p, hp: 1}))}
+                    isBusy={isBusy} 
+                    setBusy={setIsBusy} 
+                />
+            )}
+            {currentView === 'market' && <Market playerGold={player.gold} onBuy={handleMarketBuy} />}
+            {currentView === 'leaderboard' && <Leaderboard />}
         </main>
       </div>
+      
+      {/* Mobile Nav */}
+      <nav className="md:hidden fixed bottom-0 left-0 w-full bg-slate-900 border-t border-slate-800 flex justify-around p-3 z-50 overflow-x-auto">
+         {[User, Map, Swords, ShoppingBag, Hammer, Trophy].map((Icon, idx) => {
+             const views: View[] = ['character', 'expedition', 'arena', 'market', 'blacksmith', 'leaderboard'];
+             return (
+                <button key={idx} onClick={() => setCurrentView(views[idx])} className={`flex flex-col items-center gap-1 text-xs min-w-[50px] ${currentView === views[idx] ? 'text-indigo-400' : 'text-slate-500'}`}>
+                    <Icon size={20} />
+                </button>
+             );
+         })}
+      </nav>
     </div>
   );
 }
