@@ -16,6 +16,15 @@ export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 export type BonusType = 'FLAT' | 'PERCENT' | 'MULTIPLIER';
 export type GameMode = 'GLOBAL' | 'ARENA' | 'EXPEDITION' | 'BOSS';
 
+// --- GLOBAL CONFIG (NEW) ---
+export interface GlobalConfig {
+    startingLevel: number;
+    startingGold: number;
+    startingStatPoints: number;
+    startingStats: Stats;
+    startingInventory: string[]; // IDs of BaseItems
+}
+
 // --- COMPLEX MODIFIER TYPES (GDD) ---
 
 export interface ModifierBonus {

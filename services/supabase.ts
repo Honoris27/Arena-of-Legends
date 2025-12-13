@@ -1,3 +1,4 @@
+
 import { createClient } from '@supabase/supabase-js';
 import { Player, RankEntry } from '../types';
 
@@ -22,7 +23,7 @@ export const savePlayerProfile = async (player: Player, wins: number = 0) => {
             });
 
         if (error) {
-            console.error('Error saving profile:', error);
+            console.error('Error saving profile:', JSON.stringify(error, null, 2));
         }
     } catch (err) {
         console.error('Exception saving profile:', err);
@@ -37,9 +38,15 @@ export const loadPlayerProfile = async (userId: string): Promise<Player | null> 
             .eq('id', userId)
             .single();
 
-        if (error || !data) {
+        if (error) {
+            // If error code is PGRST116, it means no rows returned (new user), which is fine.
+            if (error.code !== 'PGRST116') {
+                console.error('Error loading profile:', JSON.stringify(error, null, 2));
+            }
             return null;
         }
+
+        if (!data) return null;
 
         return data.data as Player;
     } catch (err) {

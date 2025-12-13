@@ -1,13 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
-import { X, PlusCircle, Trash2, Edit, Save, Map, Gift, Megaphone, Skull, Users, Package, Database, Hammer, Eye, Check, RefreshCw, Zap, Clock, Coins, FileText, Ban } from 'lucide-react';
-import { Player, Item, ExpeditionLocation, Region, ItemType, Role, Announcement, StatType, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, ModifierBonus, BonusType, GameMode, GameEvent, ItemRarity } from '../types';
+import { X, PlusCircle, Trash2, Edit, Save, Map, Gift, Megaphone, Skull, Users, Package, Database, Hammer, Eye, Check, RefreshCw, Zap, Clock, Coins, FileText, Ban, ShoppingBag, Settings } from 'lucide-react';
+import { Player, Item, ExpeditionLocation, Region, ItemType, Role, Announcement, StatType, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, ModifierBonus, BonusType, GameMode, GameEvent, ItemRarity, MarketItem, GlobalConfig } from '../types';
 import { generateDynamicItem, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS } from '../services/gameLogic';
 import ItemTooltip from './ItemTooltip';
 
 interface AdminPanelProps {
   isOpen: boolean;
   onClose: () => void;
+  currentUserRole: Role; // New prop for role check
   // Data State
   baseItems: BaseItem[];
   setBaseItems: (items: BaseItem[]) => void;
@@ -15,6 +16,10 @@ interface AdminPanelProps {
   setMaterials: (mats: ItemMaterial[]) => void;
   modifiers: ItemModifier[];
   setModifiers: (mods: ItemModifier[]) => void;
+  marketItems: MarketItem[];
+  setMarketItems: (items: MarketItem[]) => void;
+  globalConfig: GlobalConfig;
+  setGlobalConfig: (cfg: GlobalConfig) => void;
   // User Actions
   users: Player[];
   onAddItemToPlayer: (playerId: string, item: Item) => void;
@@ -43,10 +48,12 @@ interface AdminPanelProps {
 }
 
 const AdminPanel: React.FC<AdminPanelProps> = ({ 
-  isOpen, onClose, 
+  isOpen, onClose, currentUserRole,
   baseItems, setBaseItems,
   materials, setMaterials,
   modifiers, setModifiers,
+  marketItems, setMarketItems,
+  globalConfig, setGlobalConfig,
   users, onAddItemToPlayer, onBanUser, onEditUser, onGivePremium,
   regions, onAddRegion,
   locations, onAddLocation, onDeleteLocation,
@@ -56,7 +63,8 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   activeEvent, onUpdateEvent,
   onAddGold, onLevelUp, onHeal
 }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'items' | 'modifiers' | 'world' | 'mobs' | 'system'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'items' | 'modifiers' | 'world' | 'mobs' | 'system' | 'market' | 'config'>('users');
+  const [itemsFilter, setItemsFilter] = useState<ItemType | 'ALL'>('ALL');
   
   // --- USER MGMT STATE ---
   const [editingUser, setEditingUser] = useState<Player | null>(null);
@@ -78,6 +86,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [newBaseMinLvl, setNewBaseMinLvl] = useState(1);
   const [newBaseStat, setNewBaseStat] = useState<StatType>('STR');
   const [newBaseVal, setNewBaseVal] = useState(0);
+
+  // --- MARKET STATE ---
+  const [newMarketName, setNewMarketName] = useState("");
+  const [newMarketPrice, setNewMarketPrice] = useState(100);
+  const [newMarketType, setNewMarketType] = useState<string>("consumable");
+  const [newMarketDesc, setNewMarketDesc] = useState("");
+  const [newMarketIcon, setNewMarketIcon] = useState("📦");
 
   // --- MODIFIER STATE ---
   const [modEditorOpen, setModEditorOpen] = useState(false);
@@ -113,7 +128,16 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const [evtScroll, setEvtScroll] = useState(0.1);
   const [evtSalvage, setEvtSalvage] = useState(1.5);
 
+  // Force moderators to only see 'users'
+  useEffect(() => {
+    if (currentUserRole === 'moderator' && activeTab !== 'users') {
+        setActiveTab('users');
+    }
+  }, [currentUserRole, activeTab]);
+
   if (!isOpen) return null;
+  // Security Guard: Regular players cannot access
+  if (currentUserRole === 'player') return null;
 
   // --- ITEM LOGIC ---
   const handlePreviewItem = () => {
@@ -150,6 +174,31 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       setBaseItems([...baseItems, newItem]);
       alert(`${newBaseName} veritabanına eklendi!`);
       setNewBaseName("");
+  };
+
+  const deleteBaseItem = (id: string) => {
+      if(confirm('Silmek istediğine emin misin?')) {
+          setBaseItems(baseItems.filter(i => i.id !== id));
+      }
+  };
+
+  // --- MARKET LOGIC ---
+  const handleAddMarketItem = () => {
+      if(!newMarketName) return;
+      const newItem: MarketItem = {
+          id: Date.now().toString(),
+          name: newMarketName,
+          price: newMarketPrice,
+          type: newMarketType as any,
+          description: newMarketDesc,
+          icon: newMarketIcon
+      };
+      setMarketItems([...marketItems, newItem]);
+      setNewMarketName("");
+  };
+
+  const handleDeleteMarketItem = (id: string) => {
+      setMarketItems(marketItems.filter(m => m.id !== id));
   };
 
   // --- MODIFIER HANDLERS ---
@@ -292,7 +341,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       <div className="bg-slate-900 border border-slate-600 rounded-2xl w-full max-w-6xl h-[90vh] shadow-2xl flex flex-col overflow-hidden">
         
         <div className="flex justify-between items-center p-6 border-b border-slate-700 bg-slate-800">
-            <h2 className="text-2xl font-bold cinzel text-white">Yönetici Paneli</h2>
+            <h2 className="text-2xl font-bold cinzel text-white">Yönetici Paneli {currentUserRole === 'moderator' && '(Moderatör)'}</h2>
             <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={24} /></button>
         </div>
 
@@ -300,21 +349,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
             {/* Sidebar */}
             <div className="w-64 bg-slate-800 border-r border-slate-700 flex flex-col p-4 gap-2">
                 <button onClick={() => setActiveTab('users')} className={`p-3 rounded text-left font-bold ${activeTab === 'users' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Users size={16} className="inline mr-2"/> Kullanıcılar</button>
-                <button onClick={() => setActiveTab('items')} className={`p-3 rounded text-left font-bold ${activeTab === 'items' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Package size={16} className="inline mr-2"/> Eşya Editörü</button>
-                <button onClick={() => setActiveTab('modifiers')} className={`p-3 rounded text-left font-bold ${activeTab === 'modifiers' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Hammer size={16} className="inline mr-2"/> Modifier</button>
-                <button onClick={() => setActiveTab('world')} className={`p-3 rounded text-left font-bold ${activeTab === 'world' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Map size={16} className="inline mr-2"/> Dünya</button>
-                <button onClick={() => setActiveTab('mobs')} className={`p-3 rounded text-left font-bold ${activeTab === 'mobs' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Skull size={16} className="inline mr-2"/> Yaratıklar</button>
-                <button onClick={() => setActiveTab('system')} className={`p-3 rounded text-left font-bold ${activeTab === 'system' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Zap size={16} className="inline mr-2"/> Event & Sistem</button>
                 
-                {/* Quick Cheats for Testing */}
-                <div className="mt-auto pt-4 border-t border-slate-700">
-                     <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Hızlı Hileler (Kendine)</h4>
-                     <div className="grid grid-cols-3 gap-2">
-                         <button onClick={onAddGold} className="p-2 bg-slate-700 rounded text-yellow-500 hover:bg-slate-600" title="+Altın"><PlusCircle size={16}/></button>
-                         <button onClick={onLevelUp} className="p-2 bg-slate-700 rounded text-blue-500 hover:bg-slate-600" title="+Level"><PlusCircle size={16}/></button>
-                         <button onClick={onHeal} className="p-2 bg-slate-700 rounded text-red-500 hover:bg-slate-600" title="Heal"><PlusCircle size={16}/></button>
-                     </div>
-                </div>
+                {currentUserRole === 'admin' && (
+                    <>
+                    <button onClick={() => setActiveTab('items')} className={`p-3 rounded text-left font-bold ${activeTab === 'items' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Package size={16} className="inline mr-2"/> Eşya Editörü</button>
+                    <button onClick={() => setActiveTab('market')} className={`p-3 rounded text-left font-bold ${activeTab === 'market' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><ShoppingBag size={16} className="inline mr-2"/> Pazar</button>
+                    <button onClick={() => setActiveTab('modifiers')} className={`p-3 rounded text-left font-bold ${activeTab === 'modifiers' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Hammer size={16} className="inline mr-2"/> Modifier</button>
+                    <button onClick={() => setActiveTab('world')} className={`p-3 rounded text-left font-bold ${activeTab === 'world' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Map size={16} className="inline mr-2"/> Dünya</button>
+                    <button onClick={() => setActiveTab('mobs')} className={`p-3 rounded text-left font-bold ${activeTab === 'mobs' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Skull size={16} className="inline mr-2"/> Yaratıklar</button>
+                    <button onClick={() => setActiveTab('system')} className={`p-3 rounded text-left font-bold ${activeTab === 'system' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Zap size={16} className="inline mr-2"/> Event & Sistem</button>
+                    <button onClick={() => setActiveTab('config')} className={`p-3 rounded text-left font-bold ${activeTab === 'config' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}><Settings size={16} className="inline mr-2"/> Ayarlar</button>
+                    
+                    {/* Quick Cheats for Testing - Admin Only */}
+                    <div className="mt-auto pt-4 border-t border-slate-700">
+                         <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Hızlı Hileler (Kendine)</h4>
+                         <div className="grid grid-cols-3 gap-2">
+                             <button onClick={onAddGold} className="p-2 bg-slate-700 rounded text-yellow-500 hover:bg-slate-600" title="+Altın"><PlusCircle size={16}/></button>
+                             <button onClick={onLevelUp} className="p-2 bg-slate-700 rounded text-blue-500 hover:bg-slate-600" title="+Level"><PlusCircle size={16}/></button>
+                             <button onClick={onHeal} className="p-2 bg-slate-700 rounded text-red-500 hover:bg-slate-600" title="Heal"><PlusCircle size={16}/></button>
+                         </div>
+                    </div>
+                    </>
+                )}
             </div>
 
             {/* Content */}
@@ -336,11 +392,18 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                         <td className="p-3 text-yellow-500">{u.gold}</td>
                                         <td className="p-3"><span className="bg-slate-900 px-2 py-1 rounded text-xs uppercase">{u.role}</span></td>
                                         <td className="p-3 text-right flex justify-end gap-2">
-                                            <button onClick={() => setGiftModalUser(u)} className="p-1.5 bg-green-900/50 text-green-400 rounded hover:bg-green-800" title="Hediye Ver"><Gift size={16}/></button>
-                                            <button onClick={() => {
-                                                const name = prompt("Yeni İsim:", u.name);
-                                                if(name) onEditUser(u.id, { name });
-                                            }} className="p-1.5 bg-blue-900/50 text-blue-400 rounded hover:bg-blue-800" title="Düzenle"><Edit size={16}/></button>
+                                            {/* Admin Only Actions */}
+                                            {currentUserRole === 'admin' && (
+                                                <>
+                                                    <button onClick={() => setGiftModalUser(u)} className="p-1.5 bg-green-900/50 text-green-400 rounded hover:bg-green-800" title="Hediye Ver"><Gift size={16}/></button>
+                                                    <button onClick={() => {
+                                                        const name = prompt("Yeni İsim:", u.name);
+                                                        if(name) onEditUser(u.id, { name });
+                                                    }} className="p-1.5 bg-blue-900/50 text-blue-400 rounded hover:bg-blue-800" title="Düzenle"><Edit size={16}/></button>
+                                                </>
+                                            )}
+                                            
+                                            {/* Moderator & Admin Action */}
                                             <button onClick={() => onBanUser(u.id)} className="p-1.5 bg-red-900/50 text-red-400 rounded hover:bg-red-800" title="Banla/Sil"><Ban size={16}/></button>
                                         </td>
                                     </tr>
@@ -349,7 +412,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                         </table>
 
                         {/* Gift Modal */}
-                        {giftModalUser && (
+                        {giftModalUser && currentUserRole === 'admin' && (
                             <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 p-4">
                                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-600 w-full max-w-sm">
                                     <h4 className="font-bold text-white mb-4">Hediye Gönder: {giftModalUser.name}</h4>
@@ -374,30 +437,57 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                 )}
 
-                {/* ITEM CREATOR TAB */}
-                {activeTab === 'items' && (
+                {/* ITEMS TAB */}
+                {activeTab === 'items' && currentUserRole === 'admin' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                         {/* ADD NEW BASE ITEM */}
-                         <div className="p-6 bg-slate-800 rounded-xl border border-slate-700">
-                             <h3 className="font-bold text-white mb-6 border-b border-slate-600 pb-2">Yeni Ana Eşya (Base Item) Ekle</h3>
-                             <div className="space-y-4">
-                                 <input placeholder="Eşya Adı (Ör: Efsanevi Kılıç)" value={newBaseName} onChange={e => setNewBaseName(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white"/>
-                                 <div className="flex gap-2">
-                                     <select value={newBaseType} onChange={e => setNewBaseType(e.target.value as any)} className="bg-slate-900 border border-slate-600 rounded p-2 text-white flex-1">
-                                         <option value="weapon">Silah</option><option value="armor">Zırh</option><option value="helmet">Kask</option>
-                                         <option value="shield">Kalkan</option><option value="gloves">Eldiven</option><option value="boots">Bot</option>
-                                         <option value="ring">Yüzük</option><option value="necklace">Kolye</option><option value="belt">Kemer</option>
-                                     </select>
-                                     <input type="number" placeholder="Min Lvl" value={newBaseMinLvl} onChange={e => setNewBaseMinLvl(Number(e.target.value))} className="bg-slate-900 border border-slate-600 rounded p-2 text-white w-24"/>
+                         {/* Base Item List & Add */}
+                         <div className="flex flex-col gap-6">
+                             {/* Add Form */}
+                             <div className="p-6 bg-slate-800 rounded-xl border border-slate-700">
+                                 <h3 className="font-bold text-white mb-6 border-b border-slate-600 pb-2">Yeni Ana Eşya (Base Item) Ekle</h3>
+                                 <div className="space-y-4">
+                                     <input placeholder="Eşya Adı (Ör: Efsanevi Kılıç)" value={newBaseName} onChange={e => setNewBaseName(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white"/>
+                                     <div className="flex gap-2">
+                                         <select value={newBaseType} onChange={e => setNewBaseType(e.target.value as any)} className="bg-slate-900 border border-slate-600 rounded p-2 text-white flex-1">
+                                             <option value="weapon">Silah</option><option value="armor">Zırh</option><option value="helmet">Kask</option>
+                                             <option value="shield">Kalkan</option><option value="gloves">Eldiven</option><option value="boots">Bot</option>
+                                             <option value="ring">Yüzük</option><option value="necklace">Kolye</option><option value="earring">Küpe</option><option value="belt">Kemer</option>
+                                         </select>
+                                         <input type="number" placeholder="Min Lvl" value={newBaseMinLvl} onChange={e => setNewBaseMinLvl(Number(e.target.value))} className="bg-slate-900 border border-slate-600 rounded p-2 text-white w-24"/>
+                                     </div>
+                                     <div className="flex gap-2 items-center bg-slate-900 p-2 rounded">
+                                         <span className="text-xs text-slate-400">Temel Stat:</span>
+                                         <select value={newBaseStat} onChange={e => setNewBaseStat(e.target.value as any)} className="bg-slate-800 border border-slate-600 rounded p-1 text-white text-xs">
+                                             <option value="STR">STR</option><option value="AGI">AGI</option><option value="VIT">VIT</option><option value="INT">INT</option><option value="LUK">LUK</option>
+                                         </select>
+                                         <input type="number" placeholder="Değer" value={newBaseVal} onChange={e => setNewBaseVal(Number(e.target.value))} className="bg-slate-800 border border-slate-600 rounded p-1 text-white text-xs w-20"/>
+                                     </div>
+                                     <button onClick={handleAddBaseItem} className="w-full bg-green-700 hover:bg-green-600 text-white font-bold py-2 rounded">Veritabanına Ekle</button>
                                  </div>
-                                 <div className="flex gap-2 items-center bg-slate-900 p-2 rounded">
-                                     <span className="text-xs text-slate-400">Temel Stat:</span>
-                                     <select value={newBaseStat} onChange={e => setNewBaseStat(e.target.value as any)} className="bg-slate-800 border border-slate-600 rounded p-1 text-white text-xs">
-                                         <option value="STR">STR</option><option value="AGI">AGI</option><option value="VIT">VIT</option><option value="INT">INT</option><option value="LUK">LUK</option>
+                             </div>
+
+                             {/* List of Base Items */}
+                             <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex-1 overflow-hidden flex flex-col">
+                                 <div className="flex justify-between items-center mb-4">
+                                     <h3 className="font-bold text-white">Mevcut Eşyalar</h3>
+                                     <select value={itemsFilter} onChange={e => setItemsFilter(e.target.value as any)} className="bg-slate-900 text-xs p-1 rounded border border-slate-600 text-white">
+                                         <option value="ALL">Tümü</option>
+                                         <option value="weapon">Silahlar</option><option value="armor">Zırhlar</option><option value="helmet">Kasklar</option>
+                                         <option value="shield">Kalkanlar</option><option value="gloves">Eldivenler</option><option value="boots">Botlar</option>
+                                         <option value="ring">Yüzükler</option><option value="necklace">Kolyeler</option><option value="belt">Kemerler</option>
                                      </select>
-                                     <input type="number" placeholder="Değer" value={newBaseVal} onChange={e => setNewBaseVal(Number(e.target.value))} className="bg-slate-800 border border-slate-600 rounded p-1 text-white text-xs w-20"/>
                                  </div>
-                                 <button onClick={handleAddBaseItem} className="w-full bg-green-700 hover:bg-green-600 text-white font-bold py-2 rounded">Veritabanına Ekle</button>
+                                 <div className="overflow-y-auto max-h-[300px] space-y-1">
+                                     {baseItems.filter(i => itemsFilter === 'ALL' || i.type === itemsFilter).map(item => (
+                                         <div key={item.id} className="flex justify-between items-center bg-slate-900 p-2 rounded border border-slate-700">
+                                             <div>
+                                                 <div className="text-sm font-bold text-slate-200">{item.name}</div>
+                                                 <div className="text-xs text-slate-500 uppercase">{item.type} | Lvl {item.minLevel}</div>
+                                             </div>
+                                             <button onClick={() => deleteBaseItem(item.id)} className="text-red-500 hover:text-red-400"><Trash2 size={14}/></button>
+                                         </div>
+                                     ))}
+                                 </div>
                              </div>
                          </div>
 
@@ -435,8 +525,49 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                 )}
 
+                {/* MARKET TAB */}
+                {activeTab === 'market' && currentUserRole === 'admin' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
+                            <h3 className="font-bold text-white mb-4">Yeni Pazar Ürünü Ekle</h3>
+                            <div className="space-y-4">
+                                <input placeholder="Ürün Adı" value={newMarketName} onChange={e => setNewMarketName(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white"/>
+                                <input placeholder="Açıklama" value={newMarketDesc} onChange={e => setNewMarketDesc(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white"/>
+                                <div className="flex gap-2">
+                                    <select value={newMarketType} onChange={e => setNewMarketType(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-2 text-white flex-1">
+                                        <option value="consumable">Tüketilebilir</option>
+                                        <option value="material">Materyal</option>
+                                        <option value="premium">Premium</option>
+                                    </select>
+                                    <input type="number" placeholder="Fiyat" value={newMarketPrice} onChange={e => setNewMarketPrice(Number(e.target.value))} className="bg-slate-900 border border-slate-600 rounded p-2 text-white w-24"/>
+                                    <input type="text" placeholder="İkon (Emoji)" value={newMarketIcon} onChange={e => setNewMarketIcon(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-2 text-white w-16"/>
+                                </div>
+                                <button onClick={handleAddMarketItem} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded">Pazara Ekle</button>
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
+                            <h3 className="font-bold text-white mb-4">Pazardaki Ürünler</h3>
+                            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                                {marketItems.map(m => (
+                                    <div key={m.id} className="flex justify-between items-center bg-slate-900 p-3 rounded border border-slate-700">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-2xl">{m.icon}</span>
+                                            <div>
+                                                <div className="font-bold text-white">{m.name}</div>
+                                                <div className="text-xs text-yellow-500">{m.price} Altın</div>
+                                            </div>
+                                        </div>
+                                        <button onClick={() => handleDeleteMarketItem(m.id)} className="text-red-500"><Trash2 size={16}/></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* MODIFIERS TAB */}
-                {activeTab === 'modifiers' && (
+                {activeTab === 'modifiers' && currentUserRole === 'admin' && (
                     <div className="h-full flex flex-col">
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="font-bold text-white">Modifier & Bonus Yönetimi</h3>
@@ -528,7 +659,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 )}
 
                 {/* WORLD MANAGER */}
-                {activeTab === 'world' && (
+                {activeTab === 'world' && currentUserRole === 'admin' && (
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                          <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
                              <h3 className="font-bold text-white mb-2">Sefer Bölgeleri</h3>
@@ -564,7 +695,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                 )}
 
                 {/* MOBS TAB */}
-                {activeTab === 'mobs' && (
+                {activeTab === 'mobs' && currentUserRole === 'admin' && (
                     <div className="bg-slate-800 p-4 rounded border border-slate-700">
                         <h3 className="font-bold text-white mb-4">Kayıtlı Yaratık Şablonları</h3>
                         <p className="text-slate-500 text-sm">Oyun şu anda dinamik yaratık üretim sistemi kullanıyor. Şablon ekleme özelliği yakında gelecek.</p>
@@ -575,8 +706,63 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                 )}
 
+                {/* GLOBAL CONFIG TAB */}
+                {activeTab === 'config' && currentUserRole === 'admin' && (
+                    <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
+                        <h3 className="font-bold text-white mb-6 border-b border-slate-600 pb-2">Yeni Üye Başlangıç Ayarları</h3>
+                        
+                        <div className="grid grid-cols-2 gap-6 mb-6">
+                            <div>
+                                <label className="block text-xs text-slate-400 mb-1">Başlangıç Altını</label>
+                                <input type="number" value={globalConfig.startingGold} onChange={e => setGlobalConfig({...globalConfig, startingGold: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white" />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-slate-400 mb-1">Başlangıç Seviyesi</label>
+                                <input type="number" value={globalConfig.startingLevel} onChange={e => setGlobalConfig({...globalConfig, startingLevel: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white" />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-slate-400 mb-1">Stat Puanları</label>
+                                <input type="number" value={globalConfig.startingStatPoints} onChange={e => setGlobalConfig({...globalConfig, startingStatPoints: Number(e.target.value)})} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white" />
+                            </div>
+                        </div>
+
+                        <div className="mb-6">
+                            <label className="block text-xs text-slate-400 mb-2 uppercase font-bold">Başlangıç Statları</label>
+                            <div className="grid grid-cols-5 gap-2">
+                                {(['STR','AGI','VIT','INT','LUK'] as StatType[]).map(stat => (
+                                    <div key={stat}>
+                                        <span className="text-xs text-slate-500 block text-center mb-1">{stat}</span>
+                                        <input type="number" value={globalConfig.startingStats[stat]} onChange={e => setGlobalConfig({...globalConfig, startingStats: {...globalConfig.startingStats, [stat]: Number(e.target.value)}})} className="w-full bg-slate-900 border border-slate-600 rounded p-1 text-center text-white" />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-2 uppercase font-bold">Başlangıç Eşyaları (ID Listesi)</label>
+                            <div className="bg-slate-900 p-2 rounded border border-slate-600 mb-2 min-h-[50px] flex flex-wrap gap-2">
+                                {globalConfig.startingInventory.map((itemId, idx) => (
+                                    <span key={idx} className="bg-slate-700 px-2 py-1 rounded text-xs flex items-center gap-1">
+                                        {baseItems.find(i => i.id === itemId)?.name || itemId}
+                                        <button onClick={() => setGlobalConfig({...globalConfig, startingInventory: globalConfig.startingInventory.filter((_, i) => i !== idx)})} className="text-red-400 hover:text-white"><X size={12}/></button>
+                                    </span>
+                                ))}
+                            </div>
+                            <select 
+                                onChange={e => {
+                                    if(e.target.value) setGlobalConfig({...globalConfig, startingInventory: [...globalConfig.startingInventory, e.target.value]});
+                                }}
+                                className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white"
+                            >
+                                <option value="">Eşya Ekle...</option>
+                                {baseItems.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                )}
+
                 {/* SYSTEM TAB (Events) */}
-                {activeTab === 'system' && (
+                {activeTab === 'system' && currentUserRole === 'admin' && (
                     <div className="space-y-8">
                         {/* Active Event Card */}
                         <div className={`p-6 rounded-xl border-2 ${activeEvent ? 'bg-gradient-to-r from-red-900/50 to-slate-900 border-red-500 animate-pulse-slow' : 'bg-slate-800 border-slate-700'}`}>

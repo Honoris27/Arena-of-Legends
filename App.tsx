@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Player, StatType, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, Toast, BlacksmithJob, ItemRarity, ItemType, GameEvent } from './types';
-import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus } from './services/gameLogic';
+import { Player, StatType, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, Toast, BlacksmithJob, ItemRarity, ItemType, GameEvent, GlobalConfig } from './types';
+import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus, INITIAL_MARKET_ITEMS, DEFAULT_GLOBAL_CONFIG } from './services/gameLogic';
 import { supabase, savePlayerProfile, loadPlayerProfile } from './services/supabase';
 import CharacterProfile from './components/CharacterProfile';
 import Expedition from './components/Expedition';
@@ -28,7 +28,7 @@ const INITIAL_LOCATIONS: ExpeditionLocation[] = [
     { id: 'l2', regionId: 'r1', name: "Kurt İni", minLevel: 2, duration: 2, risk: "Düşük", rewardRate: 1.2, desc: "Kurt sürüleri." },
 ];
 
-const DEFAULT_PLAYER: Player = {
+const DEFAULT_PLAYER_TEMPLATE: Player = {
   id: '',
   name: "Bilinmeyen",
   role: 'player',
@@ -58,7 +58,7 @@ type View = 'character' | 'expedition' | 'arena' | 'blacksmith' | 'leaderboard' 
 
 function App() {
   const [session, setSession] = useState<any>(null);
-  const [player, setPlayer] = useState<Player>(DEFAULT_PLAYER);
+  const [player, setPlayer] = useState<Player>(DEFAULT_PLAYER_TEMPLATE);
   const [wins, setWins] = useState(0); 
   const [currentView, setCurrentView] = useState<View>('character');
   const [isBusy, setIsBusy] = useState(false);
@@ -78,6 +78,8 @@ function App() {
   const [baseItems, setBaseItems] = useState<BaseItem[]>(INITIAL_BASE_ITEMS);
   const [materials, setMaterials] = useState<ItemMaterial[]>(INITIAL_MATERIALS);
   const [modifiers, setModifiers] = useState<ItemModifier[]>(INITIAL_MODIFIERS);
+  const [marketItems, setMarketItems] = useState<MarketItem[]>(INITIAL_MARKET_ITEMS);
+  const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(DEFAULT_GLOBAL_CONFIG);
 
   const saveTimeout = useRef<any>(null);
 
@@ -98,7 +100,7 @@ function App() {
       setSession(session);
       if (session) initPlayer(session.user);
       else {
-          setPlayer(DEFAULT_PLAYER);
+          setPlayer(DEFAULT_PLAYER_TEMPLATE);
           setLoading(false);
       }
     });
@@ -112,19 +114,31 @@ function App() {
       
       if (profile) {
           setPlayer(prev => ({
-              ...DEFAULT_PLAYER,
+              ...DEFAULT_PLAYER_TEMPLATE,
               ...profile,
-              equipment: { ...DEFAULT_PLAYER.equipment, ...profile.equipment },
+              equipment: { ...DEFAULT_PLAYER_TEMPLATE.equipment, ...profile.equipment },
               inventory: profile.inventory || [], // Ensure array
               blacksmithQueue: profile.blacksmithQueue || []
           }));
       } else {
+          // Initialize New Player with Global Config
           const meta = user.user_metadata;
+          const startingItems: Item[] = globalConfig.startingInventory.map(baseId => {
+              const base = baseItems.find(b => b.id === baseId);
+              if(base) return generateDynamicItem(1, [base], materials, modifiers);
+              return null;
+          }).filter(i => i !== null) as Item[];
+
           const newPlayer: Player = {
-              ...DEFAULT_PLAYER,
+              ...DEFAULT_PLAYER_TEMPLATE,
               id: user.id,
               name: meta.full_name || 'Gladyatör',
-              avatarUrl: meta.avatar_url || DEFAULT_PLAYER.avatarUrl,
+              avatarUrl: meta.avatar_url || DEFAULT_PLAYER_TEMPLATE.avatarUrl,
+              gold: globalConfig.startingGold,
+              level: globalConfig.startingLevel,
+              statPoints: globalConfig.startingStatPoints,
+              stats: { ...globalConfig.startingStats },
+              inventory: startingItems
           };
           setPlayer(newPlayer);
           await savePlayerProfile(newPlayer, 0);
@@ -306,6 +320,10 @@ function App() {
           }
           setPlayer(p => ({ ...p, learnedModifiers: [...p.learnedModifiers, item.linkedModifierId!], inventory: removeFromInventory(p.inventory, item.id) }));
           addToast("Yeni özellik öğrenildi!", "success");
+      } else if (item.type === 'consumable') {
+          // Placeholder for potions
+          setPlayer(p => ({...p, hp: p.maxHp, inventory: removeFromInventory(p.inventory, item.id)}));
+          addToast("İksir kullanıldı.", "success");
       }
   };
 
@@ -350,14 +368,17 @@ function App() {
       <AdminPanel 
         isOpen={showAdmin} 
         onClose={() => setShowAdmin(false)}
+        currentUserRole={player.role} // Pass role to Admin Panel
         users={[player]} 
         onAddItemToPlayer={(id, item) => setPlayer(p => ({...p, inventory: addToInventory(p.inventory, item)}))}
         baseItems={baseItems} setBaseItems={setBaseItems}
         materials={materials} setMaterials={setMaterials}
         modifiers={modifiers} setModifiers={setModifiers}
+        marketItems={marketItems} setMarketItems={setMarketItems}
+        globalConfig={globalConfig} setGlobalConfig={setGlobalConfig}
         regions={regions} onAddRegion={r => setRegions(prev => [...prev, r])}
         locations={locations} onAddLocation={l => setLocations(p => [...p, l])} onDeleteLocation={id => setLocations(p => p.filter(l => l.id !== id))}
-        onBanUser={() => setPlayer(DEFAULT_PLAYER)} 
+        onBanUser={() => setPlayer(DEFAULT_PLAYER_TEMPLATE)} 
         onEditUser={(id, updates) => setPlayer(p => ({...p, ...updates}))} 
         onGivePremium={(id, days) => setPlayer(p => ({...p, premiumUntil: Date.now() + days*86400000}))} 
         onAddAnnouncement={(ann) => setAnnouncements(prev => [ann, ...prev])}
@@ -397,7 +418,11 @@ function App() {
                 )}
             </button>
 
-             <button onClick={() => setShowAdmin(true)} className="text-slate-400 hover:text-white"><Settings size={20} /></button>
+             {/* Admin Panel Button: Only visible to Admin or Moderator */}
+             {(player.role === 'admin' || player.role === 'moderator') && (
+                 <button onClick={() => setShowAdmin(true)} className="text-slate-400 hover:text-white"><Settings size={20} /></button>
+             )}
+             
              <button onClick={handleLogout} className="text-red-400 hover:text-red-300"><LogOut size={20} /></button>
         </div>
       </header>
@@ -452,7 +477,7 @@ function App() {
                     setBusy={setIsBusy} 
                 />
             )}
-            {currentView === 'market' && <Market playerGold={player.gold} onBuy={handleMarketBuy} />}
+            {currentView === 'market' && <Market playerGold={player.gold} items={marketItems} onBuy={handleMarketBuy} />}
             {currentView === 'leaderboard' && <Leaderboard />}
         </main>
       </div>

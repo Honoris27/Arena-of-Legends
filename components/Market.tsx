@@ -5,18 +5,11 @@ import { Coins, ShoppingBag, X, Check, Crown } from 'lucide-react';
 
 interface MarketProps {
     playerGold: number;
+    items: MarketItem[];
     onBuy: (item: MarketItem) => void;
 }
 
-export const MARKET_ITEMS: MarketItem[] = [
-    { id: 'p1', name: "PREMIUM (15 Gün)", type: 'premium', price: 5000, description: "+%50 Sefer Puanı, -%50 Bekleme Süresi.", icon: "👑" },
-    { id: 'm1', name: "Şans Tozu", type: 'material', price: 250, description: "Demirci başarı şansını %20 artırır.", icon: "✨" },
-    { id: 'm2', name: "Can İksiri", type: 'consumable', price: 100, description: "Canını tamamen yeniler.", effect: 'heal', icon: "🍷" },
-    { id: 'm3', name: "Acemi Sandığı", type: 'consumable', price: 500, description: "Rastgele Common/Uncommon eşya içerir.", effect: 'box_common', icon: "📦" },
-    { id: 'm4', name: "Usta Sandığı", type: 'consumable', price: 2000, description: "Rastgele Rare+ eşya içerir.", effect: 'box_rare', icon: "🎁" },
-];
-
-const Market: React.FC<MarketProps> = ({ playerGold, onBuy }) => {
+const Market: React.FC<MarketProps> = ({ playerGold, items, onBuy }) => {
     const [confirmItem, setConfirmItem] = useState<MarketItem | null>(null);
 
     const handleBuyClick = (item: MarketItem) => {
@@ -70,7 +63,7 @@ const Market: React.FC<MarketProps> = ({ playerGold, onBuy }) => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {MARKET_ITEMS.map(item => {
+                {items.map(item => {
                     const canAfford = playerGold >= item.price;
                     return (
                         <div key={item.id} className={`bg-slate-800 border ${item.type === 'premium' ? 'border-yellow-600 shadow-[0_0_15px_rgba(234,179,8,0.2)]' : 'border-slate-600'} rounded-xl p-6 flex flex-col items-center text-center hover:border-green-500 transition-colors`}>

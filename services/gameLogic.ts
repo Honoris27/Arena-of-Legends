@@ -1,5 +1,5 @@
 
-import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus, GameEvent } from '../types';
+import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus, GameEvent, MarketItem, GlobalConfig } from '../types';
 
 export const isPremium = (player: Player): boolean => {
     return player.premiumUntil > Date.now();
@@ -223,6 +223,22 @@ export const INITIAL_MODIFIERS: ItemModifier[] = [
         ]
     }
 ];
+
+export const INITIAL_MARKET_ITEMS: MarketItem[] = [
+    { id: 'p1', name: "PREMIUM (15 Gün)", type: 'premium', price: 5000, description: "+%50 Sefer Puanı, -%50 Bekleme Süresi.", icon: "👑" },
+    { id: 'm1', name: "Şans Tozu", type: 'material', price: 250, description: "Demirci başarı şansını %20 artırır.", icon: "✨" },
+    { id: 'm2', name: "Can İksiri", type: 'consumable', price: 100, description: "Canını tamamen yeniler.", effect: 'heal', icon: "🍷" },
+    { id: 'm3', name: "Acemi Sandığı", type: 'consumable', price: 500, description: "Rastgele Common/Uncommon eşya içerir.", effect: 'box_common', icon: "📦" },
+    { id: 'm4', name: "Usta Sandığı", type: 'consumable', price: 2000, description: "Rastgele Rare+ eşya içerir.", effect: 'box_rare', icon: "🎁" },
+];
+
+export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
+    startingLevel: 1,
+    startingGold: 50,
+    startingStatPoints: 5,
+    startingStats: { STR: 10, AGI: 5, VIT: 10, INT: 5, LUK: 5 },
+    startingInventory: ['w1', 'a1'] // Start with simple sword and leather armor
+};
 
 // --- GENERATOR LOGIC ---
 

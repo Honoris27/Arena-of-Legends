@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Player, StatType, Equipment, Item, ItemRarity, ItemType } from '../types';
 import { calculateMaxXp, getPlayerTotalStats, calculateSellPrice, canEquipItem } from '../services/gameLogic';
-import { Sword, Shield, Zap, Brain, Clover, Plus, Crown, Hand, Footprints, Coins, CircleDollarSign, Trash2, FlaskConical, Circle, Search, X } from 'lucide-react';
+import { Sword, Shield, Zap, Brain, Clover, Plus, Crown, Hand, Footprints, Coins, CircleDollarSign, Trash2, FlaskConical, Circle, Search, X, Scroll } from 'lucide-react';
 import ItemTooltip from './ItemTooltip';
 
 interface CharacterProfileProps {
@@ -37,7 +37,8 @@ const TYPE_ICONS: any = {
     ring: Circle,
     necklace: Circle,
     earring: Circle,
-    belt: Circle
+    belt: Circle,
+    scroll: Scroll
 };
 
 interface EquipmentSlotProps {
@@ -185,7 +186,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
   // Process Inventory (Stacking & Filtering)
   const processedInventory = useMemo(() => {
       const grouped: DisplayItem[] = [];
-      const stackableTypes: ItemType[] = ['material', 'consumable'];
+      const stackableTypes: ItemType[] = ['material', 'consumable', 'scroll'];
 
       player.inventory.forEach(item => {
           // Check if item should stack
@@ -210,7 +211,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
           const matchesType = 
             filterType === 'all' ? true :
             filterType === 'equip' ? ['weapon', 'shield', 'armor', 'helmet', 'gloves', 'boots', 'ring', 'necklace', 'earring', 'belt'].includes(item.type) :
-            filterType === 'consumable' ? item.type === 'consumable' :
+            filterType === 'consumable' ? ['consumable', 'scroll'].includes(item.type) :
             filterType === 'material' ? item.type === 'material' : true;
           
           return matchesSearch && matchesType;
@@ -438,12 +439,12 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
                          </button>
                     )}
                     
-                    {selectedInventoryItem.type === 'consumable' && (
+                    {(selectedInventoryItem.type === 'consumable' || selectedInventoryItem.type === 'scroll') && (
                         <button 
                              onClick={() => handleBatchUse(selectedInventoryItem)}
                              className="flex-1 md:flex-none px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold rounded flex items-center justify-center gap-2 transition-colors"
                         >
-                            <FlaskConical size={14}/> Kullan
+                            <FlaskConical size={14}/> {selectedInventoryItem.type === 'scroll' ? 'Oku' : 'Kullan'}
                         </button>
                     )}
 
