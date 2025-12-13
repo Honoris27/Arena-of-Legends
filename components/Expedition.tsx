@@ -9,99 +9,33 @@ interface ExpeditionProps {
   player: Player;
   regions: Region[];
   locations: ExpeditionLocation[];
-  onComplete: (duration: number, locationName: string, isBoss?: boolean) => Promise<{xp: number, gold: number, items: Item[]}>;
+  onStartExpedition: (location: ExpeditionLocation, isBoss: boolean) => void;
   isBusy: boolean;
 }
 
-const Expedition: React.FC<ExpeditionProps> = ({ player, regions, locations, onComplete, isBusy }) => {
+const Expedition: React.FC<ExpeditionProps> = ({ player, regions, locations, onStartExpedition, isBusy }) => {
   const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
-  const [isAttacking, setIsAttacking] = useState(false);
-  const [resultModal, setResultModal] = useState<{show: boolean, xp: number, gold: number, items: Item[], loc: string} | null>(null);
+  // Removed local isAttacking state, relying on isBusy from parent which checks activeExpedition
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const handleAttack = async (location: ExpeditionLocation | null, isBoss: boolean = false) => {
-    if (isBusy || isAttacking) return;
-    if (player.expeditionPoints <= 0 || player.nextExpeditionTime > Date.now()) return;
-
-    setIsAttacking(true);
-    let locationName = isBoss ? "Ejderha Mağarası" : (location?.name || "Bilinmeyen");
-    let rewardMultiplier = isBoss ? 50 : (location?.duration || 1);
-
-    await new Promise(r => setTimeout(r, 800)); // Simulate combat time
-
-    const result = await onComplete(rewardMultiplier, locationName, isBoss);
-    
-    setResultModal({
-        show: true,
-        xp: result.xp,
-        gold: result.gold,
-        items: result.items,
-        loc: locationName
-    });
-
-    setIsAttacking(false);
-  };
-
   const premiumActive = isPremium(player);
   const cooldownRemaining = Math.max(0, player.nextExpeditionTime - currentTime);
   const regenRemaining = Math.max(0, player.nextPointRegenTime - currentTime);
 
+  // Active Expedition Timer Calculation
+  const expeditionProgress = player.activeExpedition 
+    ? Math.max(0, player.activeExpedition.endTime - currentTime) 
+    : 0;
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 relative">
       
-      {/* RESULT MODAL */}
-      {resultModal && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4">
-              <div className="bg-slate-900 border-2 border-yellow-600 rounded-2xl w-full max-w-md p-6 relative flex flex-col items-center shadow-[0_0_50px_rgba(234,179,8,0.3)]">
-                  <h2 className="text-3xl cinzel font-bold text-white mb-2">Sefer Tamamlandı!</h2>
-                  <p className="text-slate-400 mb-6">{resultModal.loc}</p>
-                  
-                  <div className="flex gap-8 mb-8 w-full justify-center">
-                      <div className="text-center">
-                          <div className="text-sm text-slate-500 uppercase font-bold">EXP</div>
-                          <div className="text-2xl font-mono text-blue-400">+{resultModal.xp}</div>
-                      </div>
-                      <div className="text-center">
-                          <div className="text-sm text-slate-500 uppercase font-bold">ALTIN</div>
-                          <div className="text-2xl font-mono text-yellow-500">+{resultModal.gold}</div>
-                      </div>
-                  </div>
-
-                  {resultModal.items.length > 0 && (
-                      <div className="w-full bg-slate-950/50 p-4 rounded-xl border border-slate-800 mb-6 flex flex-col items-center">
-                          <h4 className="text-xs text-slate-500 uppercase font-bold mb-3">Kazanılan Eşyalar</h4>
-                          <div className="flex gap-2 flex-wrap justify-center">
-                              {resultModal.items.map((item, idx) => (
-                                  <div key={idx} className="relative group">
-                                      <div className={`w-16 h-16 rounded border-2 flex items-center justify-center bg-slate-800 ${item.rarity === 'legendary' ? 'border-orange-500' : 'border-slate-600'}`}>
-                                           {/* Simple representation */}
-                                           <div className="text-[10px] text-center p-1">{item.name} {item.count > 1 ? `x${item.count}` : ''}</div>
-                                      </div>
-                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 w-48">
-                                          <ItemTooltip item={item} fixed />
-                                      </div>
-                                  </div>
-                              ))}
-                          </div>
-                      </div>
-                  )}
-
-                  <button 
-                    onClick={() => setResultModal(null)}
-                    className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-lg transition-colors"
-                  >
-                      ZAFERİ KUTLA
-                  </button>
-              </div>
-          </div>
-      )}
-
-      {/* Expedition Stats Bar (Existing code maintained) */}
+      {/* Expedition Stats Bar */}
       <div className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col md:flex-row justify-between items-center gap-4 shadow-lg">
           <div className="flex items-center gap-4 w-full md:w-auto">
               <div className="relative">
@@ -134,9 +68,19 @@ const Expedition: React.FC<ExpeditionProps> = ({ player, regions, locations, onC
           </div>
       </div>
 
+     {/* ACTIVE EXPEDITION BANNER */}
+     {player.activeExpedition && (
+         <div className="bg-gradient-to-r from-red-900 via-slate-900 to-red-900 border border-red-500 rounded-xl p-6 text-center animate-pulse-slow">
+             <div className="text-xl cinzel font-bold text-white mb-2">SEFER SÜRÜYOR: {player.activeExpedition.locationName}</div>
+             <div className="text-4xl font-mono font-bold text-yellow-500 mb-2">{formatTime(expeditionProgress)}</div>
+             <p className="text-slate-400 text-sm">Savaş bitene kadar beklemen gerekiyor.</p>
+         </div>
+     )}
+
+     {/* Main View */}
      {selectedRegion ? (
         // LOCATIONS IN REGION VIEW
-        <div>
+        <div className={player.activeExpedition ? 'opacity-50 pointer-events-none' : ''}>
             <button onClick={() => setSelectedRegion(null)} className="mb-6 flex items-center gap-2 text-slate-400 hover:text-white transition-colors">
                 <ArrowLeft size={20} /> Bölgelere Dön
             </button>
@@ -176,16 +120,16 @@ const Expedition: React.FC<ExpeditionProps> = ({ player, regions, locations, onC
                                 </div>
                              </div>
                              <button
-                                onClick={() => handleAttack(loc)}
-                                disabled={isBusy || isAttacking || cooldownRemaining > 0 || !canEnter || player.expeditionPoints <= 0}
+                                onClick={() => onStartExpedition(loc, false)}
+                                disabled={isBusy || cooldownRemaining > 0 || !canEnter || player.expeditionPoints <= 0}
                                 className={`w-full py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${
-                                    isBusy || isAttacking || cooldownRemaining > 0 || player.expeditionPoints <= 0
+                                    isBusy || cooldownRemaining > 0 || player.expeditionPoints <= 0
                                     ? 'bg-slate-700 text-slate-500 cursor-not-allowed' 
                                     : 'bg-red-700 hover:bg-red-600 text-white shadow-lg shadow-red-900/30'
                                 }`}
                              >
-                                <Swords size={18} className={isAttacking ? 'animate-spin' : ''} />
-                                {isAttacking ? 'Saldırılıyor...' : cooldownRemaining > 0 ? formatTime(cooldownRemaining) : 'SALDIR'}
+                                <Swords size={18} />
+                                {cooldownRemaining > 0 ? formatTime(cooldownRemaining) : 'SALDIR'}
                              </button>
                         </div>
                     );
@@ -194,7 +138,7 @@ const Expedition: React.FC<ExpeditionProps> = ({ player, regions, locations, onC
         </div>
       ) : (
         // REGION SELECTION VIEW
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className={`grid grid-cols-1 md:grid-cols-2 gap-8 ${player.activeExpedition ? 'opacity-50 pointer-events-none' : ''}`}>
             {regions.map(region => (
                 <div key={region.id} onClick={() => player.level >= region.minLevel && setSelectedRegion(region)} className={`relative h-64 rounded-2xl overflow-hidden border-2 cursor-pointer transition-all transform hover:scale-[1.02] ${player.level < region.minLevel ? 'border-slate-800 opacity-50 grayscale cursor-not-allowed' : 'border-slate-600 hover:border-yellow-500 shadow-2xl'}`}>
                      <div className="absolute inset-0 bg-slate-800 flex items-center justify-center"><Map size={64} className="text-slate-700" /></div>

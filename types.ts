@@ -157,6 +157,15 @@ export interface Announcement {
     type: 'event' | 'update' | 'general';
 }
 
+export interface ActiveExpedition {
+    locationId: string;
+    locationName: string;
+    startTime: number;
+    endTime: number;
+    isBoss: boolean;
+    rewardMultiplier: number;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -183,6 +192,9 @@ export interface Player {
   nextPointRegenTime: number; 
   nextExpeditionTime: number; 
   
+  // Active Action State (Persisted)
+  activeExpedition: ActiveExpedition | null;
+
   // Crafting
   learnedModifiers: string[]; 
   blacksmithQueue: BlacksmithJob[];
