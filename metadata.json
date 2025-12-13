@@ -1,0 +1,5 @@
+{
+  "name": "Arena of Legends",
+  "description": "A browser-based RPG/Idle strategy game where players manage a gladyator, fight in the arena, and go on expeditions.",
+  "requestFramePermissions": []
+}
