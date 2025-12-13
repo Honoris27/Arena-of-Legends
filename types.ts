@@ -11,21 +11,72 @@ export interface Stats {
 
 export type Role = 'admin' | 'moderator' | 'player';
 
-export type ItemType = 'weapon' | 'armor' | 'helmet' | 'boots' | 'gloves' | 'shield' | 'ring' | 'necklace' | 'earring' | 'belt' | 'material' | 'consumable';
+export type ItemType = 'weapon' | 'armor' | 'helmet' | 'boots' | 'gloves' | 'shield' | 'ring' | 'necklace' | 'earring' | 'belt' | 'material' | 'consumable' | 'scroll';
 export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+export type BonusType = 'FLAT' | 'PERCENT' | 'MULTIPLIER';
+export type GameMode = 'GLOBAL' | 'ARENA' | 'EXPEDITION' | 'BOSS';
+
+// --- COMPLEX MODIFIER TYPES (GDD) ---
+
+export interface ModifierBonus {
+    stat: StatType | 'CRIT_CHANCE' | 'CRIT_DAMAGE' | 'ARMOR_PEN' | 'LIFESTEAL' | 'DODGE' | 'DAMAGE_REDUCTION';
+    value: number;
+    type: BonusType;
+    mode: GameMode;
+}
+
+export interface ItemModifier {
+    id: string;
+    name: string; // e.g. "Arenanın"
+    type: 'prefix' | 'suffix';
+    minLevel: number;
+    rarity: ItemRarity;
+    allowedTypes: ItemType[] | 'ALL';
+    bonuses: ModifierBonus[]; // List of bonuses
+    fragmentCost: number;
+    isAiOnly?: boolean;
+    isActive: boolean;
+}
+
+export interface BaseItem {
+    id: string;
+    name: string;
+    type: ItemType;
+    minLevel: number;
+    baseStats: Partial<Stats>;
+}
+
+export interface ItemMaterial {
+    id: string;
+    name: string;
+    levelReq: number;
+    statMultiplier: number;
+    rarity: ItemRarity;
+}
+
+// -------------------------------------
 
 export interface Item {
-  id: string;
+  id: string; // Unique instance ID
+  templateId?: string; // ID of the base/template if applicable
   name: string;
   type: ItemType;
   rarity: ItemRarity;
   stats: Partial<Stats>;
+  bonuses?: ModifierBonus[]; // Calculated final bonuses
   value: number;
   description?: string;
   upgradeLevel: number;
+  
+  // Stacking Logic
+  count: number;
+  
   // Requirements
   reqLevel?: number;
   reqStat?: { stat: StatType, value: number };
+  
+  // Metadata for scrolls/crafting
+  linkedModifierId?: string; 
 }
 
 export interface Equipment {
@@ -39,6 +90,17 @@ export interface Equipment {
   ring: Item | null; 
   earring: Item | null; 
   belt: Item | null; 
+}
+
+export interface BlacksmithJob {
+    id: string;
+    type: 'upgrade' | 'salvage' | 'craft';
+    startTime: number;
+    duration: number; // in ms
+    item?: Item; // Item being worked on
+    resultItem?: Item; // The item to claim
+    rewards?: { gold?: number, items?: Item[] }; // For salvage rewards
+    status: 'working' | 'completed';
 }
 
 export interface Message {
@@ -89,11 +151,17 @@ export interface Player {
   inventory: Item[];
   isBanned?: boolean;
   
+  // Resources
   expeditionPoints: number;
   maxExpeditionPoints: number;
   nextPointRegenTime: number; 
   nextExpeditionTime: number; 
   
+  // Crafting
+  learnedModifiers: string[]; 
+  blacksmithQueue: BlacksmithJob[];
+  blacksmithSlots: number;
+
   premiumUntil: number;
 
   messages: Message[];
@@ -118,20 +186,6 @@ export interface Enemy {
   hp: number;
   description?: string;
   isBoss?: boolean;
-}
-
-export interface GameLog {
-  id: string;
-  timestamp: number;
-  message: string;
-  type: 'combat' | 'expedition' | 'system' | 'loot' | 'upgrade' | 'market';
-}
-
-export enum ExpeditionDuration {
-  SHORT = 1,
-  MEDIUM = 5,
-  LONG = 15,
-  EPIC = 60
 }
 
 export interface Region {
@@ -172,4 +226,11 @@ export interface MarketItem {
     description: string;
     effect?: string;
     icon?: string;
+}
+
+export interface Toast {
+    id: string;
+    message: string;
+    type: 'success' | 'error' | 'info' | 'loot';
+    duration?: number;
 }

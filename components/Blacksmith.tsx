@@ -1,135 +1,227 @@
-import React, { useState } from 'react';
-import { Item } from '../types';
-import { calculateUpgradeCost, calculateSuccessRate } from '../services/gameLogic';
-import { Hammer, Coins, ArrowUp, Zap, Sparkles } from 'lucide-react';
+
+import React, { useState, useEffect } from 'react';
+import { Item, BlacksmithJob } from '../types';
+import { calculateUpgradeCost, calculateSuccessRate, calculateSalvageReturn, generateDynamicItem, INITIAL_BASE_ITEMS, INITIAL_MODIFIERS, INITIAL_MATERIALS, getFragmentCount, getBlacksmithTime, formatTime } from '../services/gameLogic';
+import { Hammer, Coins, ArrowUp, Recycle, Anvil, Clock, Check } from 'lucide-react';
+import ItemTooltip from './ItemTooltip';
 
 interface BlacksmithProps {
   inventory: Item[];
   playerGold: number;
-  onUpgrade: (item: Item, cost: number, hasLuck: boolean) => void;
+  jobs: BlacksmithJob[];
+  learnedModifiers: string[];
+  onStartJob: (job: BlacksmithJob, cost: number) => void;
+  onClaimJob: (jobId: string) => void;
 }
 
-const Blacksmith: React.FC<BlacksmithProps> = ({ inventory, playerGold, onUpgrade }) => {
-  const [selectedItem, setSelectedItem] = useState<Item | null>(null);
-  const [useLuck, setUseLuck] = useState(false);
+const Blacksmith: React.FC<BlacksmithProps> = ({ inventory, playerGold, jobs, learnedModifiers, onStartJob, onClaimJob }) => {
+  const [activeTab, setActiveTab] = useState<'upgrade' | 'salvage' | 'craft'>('upgrade');
+  const [currentTime, setCurrentTime] = useState(Date.now());
 
-  // Filter items logic
-  const upgradeableItems = inventory.filter(i => i.type !== 'material' && i.type !== 'consumable');
-  const luckItems = inventory.filter(i => i.name === 'Şans Tozu');
-  const hasLuckItem = luckItems.length > 0;
-
-  const cost = selectedItem ? calculateUpgradeCost(selectedItem) : 0;
-  const canAfford = playerGold >= cost;
-  
-  const baseSuccess = selectedItem ? calculateSuccessRate(selectedItem) : 0;
-  const finalSuccess = Math.min(100, baseSuccess + (useLuck ? 20 : 0));
+  useEffect(() => {
+      const t = setInterval(() => setCurrentTime(Date.now()), 1000);
+      return () => clearInterval(t);
+  }, []);
 
   return (
-    <div className="max-w-5xl mx-auto flex flex-col items-center">
-      <div className="text-center mb-8">
+    <div className="max-w-6xl mx-auto flex flex-col items-center pb-20">
+      <div className="text-center mb-6">
         <h2 className="text-3xl cinzel font-bold text-orange-500 mb-2 flex items-center justify-center gap-3">
             <Hammer size={32} /> Demirci Atölyesi
         </h2>
         <p className="text-slate-400">Ateş ve çelikle kaderini şekillendir.</p>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-8 w-full">
-          {/* Anvil Section */}
-          <div className="flex-1 bg-slate-800 border-2 border-orange-900/50 rounded-xl p-8 flex flex-col items-center justify-center min-h-[400px] relative overflow-hidden">
-             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-orange-900/20 via-slate-900/50 to-slate-900 pointer-events-none"></div>
-
-             {selectedItem ? (
-                 <div className="relative z-10 w-full flex flex-col items-center animate-fade-in">
-                     <div className={`w-24 h-24 border-2 rounded-xl mb-4 flex items-center justify-center bg-slate-900 shadow-[0_0_30px_rgba(234,88,12,0.3)]`}>
-                        <Zap size={40} className="text-orange-400" />
-                     </div>
-                     
-                     <h3 className="text-xl font-bold text-white mb-1">{selectedItem.name}</h3>
-                     <span className="text-orange-400 text-sm font-bold mb-6">Seviye +{selectedItem.upgradeLevel}</span>
-
-                     <div className="grid grid-cols-2 gap-4 w-full max-w-sm mb-6">
-                        <div className="bg-slate-900/80 p-3 rounded text-center border border-slate-700">
-                            <span className="block text-slate-500 text-xs uppercase mb-1">Maliyet</span>
-                            <span className="text-lg font-mono text-yellow-500 flex items-center justify-center gap-1">
-                                {cost} <Coins size={14} />
-                            </span>
-                        </div>
-                        <div className="bg-slate-900/80 p-3 rounded text-center border border-slate-700">
-                            <span className="block text-slate-500 text-xs uppercase mb-1">Başarı Şansı</span>
-                            <span className={`text-lg font-mono font-bold ${finalSuccess > 70 ? 'text-green-400' : finalSuccess > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
-                                %{finalSuccess}
-                            </span>
-                        </div>
-                     </div>
-
-                     {/* Luck Item Toggle */}
-                     <div className="w-full max-w-sm mb-6 p-3 bg-slate-900/50 rounded-lg border border-slate-700 flex items-center justify-between">
-                         <div className="flex items-center gap-2">
-                             <span className="text-xl">✨</span>
-                             <div className="text-left">
-                                 <div className="text-sm font-bold text-slate-200">Şans Tozu</div>
-                                 <div className="text-[10px] text-slate-500">Mevcut: {luckItems.length}</div>
-                             </div>
-                         </div>
-                         <button 
-                            onClick={() => setUseLuck(!useLuck)}
-                            disabled={!hasLuckItem}
-                            className={`px-3 py-1 text-xs rounded border transition-colors ${
-                                useLuck 
-                                ? 'bg-purple-600 border-purple-400 text-white' 
-                                : hasLuckItem ? 'bg-slate-700 hover:bg-slate-600 border-slate-600 text-slate-300' : 'opacity-50 cursor-not-allowed bg-slate-800 border-slate-800'
-                            }`}
-                         >
-                             {useLuck ? 'Kullanılıyor (+%20)' : 'Kullan'}
-                         </button>
-                     </div>
-
-                     <button 
-                        onClick={() => onUpgrade(selectedItem, cost, useLuck)}
-                        disabled={!canAfford}
-                        className={`
-                            w-full max-w-sm py-4 rounded-lg font-bold text-lg flex items-center justify-center gap-3 transition-all
-                            ${canAfford 
-                                ? 'bg-orange-600 hover:bg-orange-500 text-white shadow-[0_0_20px_rgba(234,88,12,0.4)] hover:scale-105' 
-                                : 'bg-slate-700 text-slate-500 cursor-not-allowed'}
-                        `}
-                     >
-                        <Hammer className={canAfford ? 'animate-bounce' : ''} />
-                        GELİŞTİRMEYİ DENE
-                     </button>
-                     {!canAfford && <p className="text-red-500 text-xs mt-2">Yetersiz Altın</p>}
-                 </div>
-             ) : (
-                 <div className="text-center text-slate-500">
-                     <Hammer size={64} className="mx-auto mb-4 opacity-20" />
-                     <p>Çantadan bir eşya seç.</p>
-                 </div>
-             )}
-          </div>
-
-          {/* Inventory Selection */}
-          <div className="w-full md:w-80 bg-slate-900/50 border-l border-slate-800 p-4 h-[500px] overflow-y-auto">
-              <h4 className="font-bold text-slate-400 mb-4 sticky top-0 bg-slate-900 py-2 z-10">Geliştirilebilir Eşyalar</h4>
-              <div className="grid grid-cols-3 gap-2">
-                  {upgradeableItems.map(item => (
-                      <div 
-                        key={item.id} 
-                        onClick={() => { setSelectedItem(item); setUseLuck(false); }}
-                        className={`
-                            aspect-square rounded border cursor-pointer p-2 flex flex-col items-center justify-center text-xs text-center transition-all
-                            ${selectedItem?.id === item.id ? 'border-orange-500 bg-orange-900/20' : 'border-slate-700 hover:border-slate-500 bg-slate-800'}
-                        `}
-                      >
-                          <span className="truncate w-full">{item.name}</span>
-                          <span className="text-yellow-500">+{item.upgradeLevel}</span>
+      {/* JOB QUEUE VISUALIZATION */}
+      <div className="w-full mb-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+          {jobs.map(job => {
+              const elapsed = currentTime - job.startTime;
+              const progress = Math.min(100, (elapsed / job.duration) * 100);
+              const isDone = progress >= 100;
+              
+              return (
+                  <div key={job.id} className="bg-slate-800 border border-slate-700 rounded-lg p-3 relative overflow-hidden">
+                      <div className="flex justify-between items-center mb-2 z-10 relative">
+                          <span className="text-xs font-bold uppercase text-slate-400">{job.type === 'craft' ? 'Üretim' : job.type === 'salvage' ? 'Parçalama' : 'Geliştirme'}</span>
+                          {isDone ? <button onClick={() => onClaimJob(job.id)} className="bg-green-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1"><Check size={12}/> AL</button> 
+                                  : <span className="text-xs font-mono">{formatTime(job.duration - elapsed)}</span>}
                       </div>
-                  ))}
-                  {upgradeableItems.length === 0 && <span className="col-span-3 text-center text-slate-600 text-xs py-4">Geliştirilecek eşya yok.</span>}
+                      <div className="text-sm font-bold text-white z-10 relative mb-1">{job.item?.name || job.resultItem?.name || "Bilinmeyen Eşya"}</div>
+                      
+                      {/* Progress Bar Background */}
+                      <div className="absolute bottom-0 left-0 h-1 bg-slate-700 w-full">
+                          <div className={`h-full ${isDone ? 'bg-green-500' : 'bg-orange-500'} transition-all duration-1000`} style={{ width: `${progress}%` }}></div>
+                      </div>
+                  </div>
+              )
+          })}
+          {jobs.length < 5 && (
+              <div className="border-2 border-dashed border-slate-700 rounded-lg p-3 flex items-center justify-center text-slate-500 text-xs h-[80px]">
+                  Boş Slot
               </div>
-          </div>
+          )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-4 mb-6">
+          <button onClick={() => setActiveTab('upgrade')} className={`px-6 py-2 rounded-lg font-bold ${activeTab === 'upgrade' ? 'bg-orange-600 text-white' : 'bg-slate-800 text-slate-400'}`}>Geliştir</button>
+          <button onClick={() => setActiveTab('salvage')} className={`px-6 py-2 rounded-lg font-bold ${activeTab === 'salvage' ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400'}`}>Parçala</button>
+          <button onClick={() => setActiveTab('craft')} className={`px-6 py-2 rounded-lg font-bold ${activeTab === 'craft' ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}>Üret</button>
+      </div>
+
+      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 w-full min-h-[500px]">
+          {activeTab === 'upgrade' && <UpgradePanel inventory={inventory} playerGold={playerGold} onStartJob={onStartJob} />}
+          {activeTab === 'salvage' && <SalvagePanel inventory={inventory} onStartJob={onStartJob} />}
+          {activeTab === 'craft' && <CraftPanel inventory={inventory} learnedModifiers={learnedModifiers} onStartJob={onStartJob} />}
       </div>
     </div>
   );
 };
+
+const UpgradePanel: React.FC<{ inventory: Item[], playerGold: number, onStartJob: any }> = ({ inventory, playerGold, onStartJob }) => {
+    const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+    const upgradeableItems = inventory.filter(i => ['weapon','armor','helmet','shield'].includes(i.type));
+    const cost = selectedItem ? calculateUpgradeCost(selectedItem) : 0;
+    const duration = selectedItem ? getBlacksmithTime('upgrade', selectedItem.upgradeLevel) : 0;
+
+    const handleUpgrade = () => {
+        if (!selectedItem) return;
+        const job: BlacksmithJob = {
+            id: Date.now().toString(),
+            type: 'upgrade',
+            startTime: Date.now(),
+            duration: duration,
+            item: selectedItem,
+            status: 'working'
+        };
+        onStartJob(job, cost);
+        setSelectedItem(null);
+    };
+
+    return (
+        <div className="flex gap-8">
+            <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-900/50 rounded-xl border border-slate-700">
+                 {selectedItem ? (
+                     <div className="w-full max-w-sm flex flex-col items-center">
+                         <div className="transform scale-110 mb-4"><ItemTooltip item={selectedItem} fixed /></div>
+                         <div className="text-yellow-500 font-bold mb-2">{cost} Altın</div>
+                         <div className="text-slate-400 text-xs mb-4"><Clock size={12} className="inline"/> {formatTime(duration)}</div>
+                         <button onClick={handleUpgrade} disabled={playerGold < cost} className="w-full py-2 bg-orange-600 hover:bg-orange-500 text-white rounded font-bold">BAŞLAT</button>
+                     </div>
+                 ) : <div className="text-slate-500">Sağdan eşya seç.</div>}
+            </div>
+            <div className="w-1/3 bg-slate-900 border border-slate-700 p-4 h-[400px] overflow-y-auto grid grid-cols-2 gap-2 content-start">
+                {upgradeableItems.map(i => (
+                    <div key={i.id} onClick={() => setSelectedItem(i)} className="p-2 border border-slate-700 hover:border-orange-500 cursor-pointer rounded text-xs">
+                        {i.name} +{i.upgradeLevel}
+                    </div>
+                ))}
+            </div>
+        </div>
+    )
+}
+
+const SalvagePanel: React.FC<{ inventory: Item[], onStartJob: any }> = ({ inventory, onStartJob }) => {
+    const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+    const salvageableItems = inventory.filter(i => !['material','consumable','scroll'].includes(i.type));
+    const rewards = selectedItem ? calculateSalvageReturn(selectedItem) : { prefixFrag: 0, suffixFrag: 0 };
+    const duration = selectedItem ? getBlacksmithTime('salvage', 1) : 0;
+
+    const handleSalvage = () => {
+        if (!selectedItem) return;
+        const job: BlacksmithJob = {
+            id: Date.now().toString(),
+            type: 'salvage',
+            startTime: Date.now(),
+            duration: duration,
+            item: selectedItem,
+            status: 'working',
+            rewards: { items: [] } // Handled in claim
+        };
+        onStartJob(job, 0);
+        setSelectedItem(null);
+    };
+
+    return (
+        <div className="flex gap-8">
+            <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-900/50 rounded-xl border border-slate-700">
+                {selectedItem ? (
+                    <div className="flex flex-col items-center">
+                         <div className="transform scale-110 mb-4 opacity-70 grayscale"><ItemTooltip item={selectedItem} fixed /></div>
+                         <div className="text-center mb-4">
+                             <div className="text-slate-400 text-xs">Tahmini Çıktı:</div>
+                             <div className="text-blue-400 font-bold">{rewards.prefixFrag} Ön Ek / {rewards.suffixFrag} Son Ek</div>
+                         </div>
+                         <button onClick={handleSalvage} className="bg-red-700 hover:bg-red-600 text-white px-8 py-2 rounded font-bold">ERİT</button>
+                    </div>
+                ) : <div className="text-slate-500">Parçalanacak eşya seç.</div>}
+            </div>
+            <div className="w-1/3 bg-slate-900 border border-slate-700 p-4 h-[400px] overflow-y-auto grid grid-cols-2 gap-2 content-start">
+                {salvageableItems.map(i => <div key={i.id} onClick={() => setSelectedItem(i)} className="p-2 border border-slate-700 cursor-pointer rounded text-xs truncate">{i.name}</div>)}
+            </div>
+        </div>
+    )
+}
+
+const CraftPanel: React.FC<{ inventory: Item[], learnedModifiers: string[], onStartJob: any }> = ({ inventory, learnedModifiers, onStartJob }) => {
+    // Simplified Crafting UI for brevity - same logic as before but uses queue
+    const prefixFragCount = getFragmentCount(inventory, 'prefix');
+    const suffixFragCount = getFragmentCount(inventory, 'suffix');
+    
+    const [selBase, setSelBase] = useState(INITIAL_BASE_ITEMS[0].id);
+    const [selPrefix, setSelPrefix] = useState("");
+    const [selSuffix, setSelSuffix] = useState("");
+    
+    const baseItem = INITIAL_BASE_ITEMS.find(i => i.id === selBase);
+    const prefix = INITIAL_MODIFIERS.find(m => m.id === selPrefix);
+    const suffix = INITIAL_MODIFIERS.find(m => m.id === selSuffix);
+    
+    const costPrefix = prefix?.fragmentCost || 0;
+    const costSuffix = suffix?.fragmentCost || 0;
+    const canAfford = prefixFragCount >= costPrefix && suffixFragCount >= costSuffix;
+    
+    const previewItem = baseItem ? generateDynamicItem(1, [baseItem], INITIAL_MATERIALS, INITIAL_MODIFIERS, 'rare', prefix, suffix) : null;
+    const duration = getBlacksmithTime('craft', 1);
+
+    const handleCraft = () => {
+        if (!previewItem || !canAfford) return;
+        const job: BlacksmithJob = {
+            id: Date.now().toString(),
+            type: 'craft',
+            startTime: Date.now(),
+            duration: duration,
+            resultItem: previewItem,
+            status: 'working'
+        };
+        // Pass negative cost logic via callback or handle in App
+        onStartJob(job, 0); 
+    };
+
+    return (
+        <div className="flex gap-8">
+            <div className="w-1/2 space-y-4">
+                <div className="flex justify-between bg-black/30 p-2 rounded">
+                    <span>Ön Ek Parçacığı: {prefixFragCount}</span>
+                    <span>Son Ek Parçacığı: {suffixFragCount}</span>
+                </div>
+                <select className="w-full bg-slate-900 p-2 rounded text-white" value={selBase} onChange={e => setSelBase(e.target.value)}>
+                    {INITIAL_BASE_ITEMS.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                </select>
+                <select className="w-full bg-slate-900 p-2 rounded text-white" value={selPrefix} onChange={e => setSelPrefix(e.target.value)}>
+                    <option value="">Ön Ek Yok</option>
+                    {INITIAL_MODIFIERS.filter(m => m.type === 'prefix' && learnedModifiers.includes(m.id)).map(m => <option key={m.id} value={m.id}>{m.name} ({m.fragmentCost}P)</option>)}
+                </select>
+                 <select className="w-full bg-slate-900 p-2 rounded text-white" value={selSuffix} onChange={e => setSelSuffix(e.target.value)}>
+                    <option value="">Son Ek Yok</option>
+                    {INITIAL_MODIFIERS.filter(m => m.type === 'suffix' && learnedModifiers.includes(m.id)).map(m => <option key={m.id} value={m.id}>{m.name} ({m.fragmentCost}P)</option>)}
+                </select>
+                <button onClick={handleCraft} disabled={!canAfford} className={`w-full py-3 rounded font-bold ${canAfford ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-500'}`}>ÜRET (Maliyet: {costPrefix}P / {costSuffix}S)</button>
+            </div>
+            <div className="flex-1 flex justify-center items-center bg-slate-900/50 rounded border border-slate-700">
+                {previewItem && <div className="transform scale-125"><ItemTooltip item={previewItem} fixed /></div>}
+            </div>
+        </div>
+    )
+}
 
 export default Blacksmith;

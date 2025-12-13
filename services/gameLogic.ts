@@ -1,5 +1,5 @@
 
-import { Player, Enemy, Stats, Item, ItemType, ItemRarity } from '../types';
+import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus } from '../types';
 
 export const isPremium = (player: Player): boolean => {
     return player.premiumUntil > Date.now();
@@ -37,14 +37,23 @@ export const calculateMaxMp = (int: number, level: number): number => {
 export const getPlayerTotalStats = (player: Player): Stats => {
   const totalStats = { ...player.stats };
   
-  // Add equipment stats
   Object.values(player.equipment).forEach((item) => {
-    if (item && item.stats) {
-      if (item.stats.STR) totalStats.STR += item.stats.STR;
-      if (item.stats.AGI) totalStats.AGI += item.stats.AGI;
-      if (item.stats.VIT) totalStats.VIT += item.stats.VIT;
-      if (item.stats.INT) totalStats.INT += item.stats.INT;
-      if (item.stats.LUK) totalStats.LUK += item.stats.LUK;
+    if (item) {
+        // Add basic stats
+        if (item.stats.STR) totalStats.STR += item.stats.STR;
+        if (item.stats.AGI) totalStats.AGI += item.stats.AGI;
+        if (item.stats.VIT) totalStats.VIT += item.stats.VIT;
+        if (item.stats.INT) totalStats.INT += item.stats.INT;
+        if (item.stats.LUK) totalStats.LUK += item.stats.LUK;
+        
+        // Add Bonus Stats (Flat only for basic view, percentages applied in combat calc)
+        if (item.bonuses) {
+            item.bonuses.forEach(b => {
+                if (b.mode === 'GLOBAL' && b.type === 'FLAT' && ['STR','AGI','VIT','INT','LUK'].includes(b.stat)) {
+                     totalStats[b.stat as StatType] += b.value;
+                }
+            });
+        }
     }
   });
 
@@ -54,12 +63,6 @@ export const getPlayerTotalStats = (player: Player): Stats => {
 export const canEquipItem = (player: Player, item: Item): { can: boolean, reason?: string } => {
     if (item.reqLevel && player.level < item.reqLevel) {
         return { can: false, reason: `Gereken Seviye: ${item.reqLevel}` };
-    }
-    if (item.reqStat) {
-        const currentStat = player.stats[item.reqStat.stat];
-        if (currentStat < item.reqStat.value) {
-             return { can: false, reason: `Gereken ${item.reqStat.stat}: ${item.reqStat.value}` };
-        }
     }
     return { can: true };
 };
@@ -105,94 +108,209 @@ export const generateEnemy = (playerLevel: number, isBoss: boolean = false): Ene
   };
 };
 
-const ITEM_TYPES: ItemType[] = ['weapon', 'shield', 'helmet', 'armor', 'gloves', 'boots', 'ring', 'necklace', 'earring', 'belt'];
+// --- DATA ---
 
-export const generateRandomItem = (level: number, forceRarity?: ItemRarity): Item => {
-  const type = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
-  
-  // Rarity calculation
-  let rarity: ItemRarity = 'common';
-  if (forceRarity) {
-      rarity = forceRarity;
-  } else {
-      const roll = Math.random();
-      if (roll > 0.98) rarity = 'legendary';
-      else if (roll > 0.90) rarity = 'epic';
-      else if (roll > 0.75) rarity = 'rare';
-      else if (roll > 0.50) rarity = 'uncommon';
-  }
+export const INITIAL_BASE_ITEMS: BaseItem[] = [
+    { id: 'bi1', name: 'Kılıç', type: 'weapon', minLevel: 1, baseStats: { STR: 5 } },
+    { id: 'bi2', name: 'Balta', type: 'weapon', minLevel: 3, baseStats: { STR: 8 } },
+    { id: 'bi10', name: 'Deri Zırh', type: 'armor', minLevel: 1, baseStats: { VIT: 4 } },
+    { id: 'bi11', name: 'Bronz Zırh', type: 'armor', minLevel: 5, baseStats: { VIT: 8 } },
+    { id: 'bi40', name: 'Bronz Yüzük', type: 'ring', minLevel: 1, baseStats: { LUK: 2 } },
+];
 
-  const multiplierMap = { common: 1, uncommon: 1.5, rare: 2, epic: 3, legendary: 5 };
-  const multiplier = multiplierMap[rarity];
-  
-  // Base stat value heavily influenced by level
-  const baseStatVal = Math.max(1, Math.floor((level * 0.5 + Math.random() * 2) * multiplier));
+export const INITIAL_MATERIALS: ItemMaterial[] = [
+    { id: 'mat1', name: 'Deri', levelReq: 1, statMultiplier: 1.0, rarity: 'common' },
+    { id: 'mat2', name: 'Bronz', levelReq: 5, statMultiplier: 1.2, rarity: 'common' },
+    { id: 'mat3', name: 'Demir', levelReq: 10, statMultiplier: 1.5, rarity: 'uncommon' },
+    { id: 'mat4', name: 'Çelik', levelReq: 15, statMultiplier: 1.8, rarity: 'uncommon' },
+    { id: 'mat5', name: 'Mithril', levelReq: 25, statMultiplier: 2.5, rarity: 'rare' },
+];
 
-  const stats: Partial<Stats> = {};
-  
-  // Primary Stats per Type
-  if (type === 'weapon') stats.STR = baseStatVal;
-  if (type === 'shield') { stats.VIT = baseStatVal; stats.STR = Math.floor(baseStatVal * 0.3); }
-  if (type === 'armor') stats.VIT = baseStatVal;
-  if (type === 'helmet') stats.VIT = Math.max(1, Math.floor(baseStatVal * 0.7));
-  if (type === 'gloves') stats.AGI = Math.max(1, Math.floor(baseStatVal * 0.7));
-  if (type === 'boots') stats.AGI = Math.max(1, Math.floor(baseStatVal * 0.7));
-  if (type === 'belt') { stats.VIT = Math.floor(baseStatVal * 0.5); stats.STR = Math.floor(baseStatVal * 0.3); }
-  if (type === 'ring') { stats.LUK = Math.floor(baseStatVal * 0.8); stats.STR = Math.floor(baseStatVal * 0.2); }
-  if (type === 'necklace') { stats.INT = Math.floor(baseStatVal * 0.8); stats.VIT = Math.floor(baseStatVal * 0.2); }
-  if (type === 'earring') { stats.INT = Math.floor(baseStatVal * 0.5); stats.AGI = Math.floor(baseStatVal * 0.5); }
+export const INITIAL_MODIFIERS: ItemModifier[] = [
+    { 
+        id: 'mod1', name: 'Güçlü', type: 'prefix', minLevel: 1, rarity: 'common', allowedTypes: ['weapon'], 
+        isActive: true, fragmentCost: 20,
+        bonuses: [{ stat: 'STR', value: 3, type: 'FLAT', mode: 'GLOBAL' }]
+    },
+    { 
+        id: 'mod2', name: 'Arenanın', type: 'suffix', minLevel: 5, rarity: 'rare', allowedTypes: 'ALL', 
+        isActive: true, fragmentCost: 50,
+        bonuses: [
+            { stat: 'STR', value: 2, type: 'FLAT', mode: 'GLOBAL' },
+            { stat: 'CRIT_CHANCE', value: 5, type: 'PERCENT', mode: 'ARENA' }
+        ]
+    }
+];
 
-  // Add random secondary stat for higher rarities (Drop Quality)
-  if (rarity !== 'common' && rarity !== 'uncommon') {
-     const secondary = ['STR', 'AGI', 'VIT', 'INT', 'LUK'][Math.floor(Math.random() * 5)] as keyof Stats;
-     stats[secondary] = (stats[secondary] || 0) + Math.floor(baseStatVal * 0.5);
-  }
+// --- GENERATOR LOGIC ---
 
-  const namePrefixes: Record<string, string[]> = {
-    weapon: ['Kılıç', 'Balta', 'Mızrak', 'Gürz'],
-    shield: ['Kalkan', 'Siper'],
-    armor: ['Zırh', 'Göğüslük', 'Cübbe'],
-    helmet: ['Miğfer', 'Başlık', 'Kukuleta'],
-    gloves: ['Eldiven', 'Elcik'],
-    boots: ['Çizme', 'Ayakkabı'],
-    belt: ['Kemer', 'Kuşak'],
-    ring: ['Yüzük', 'Halka'],
-    necklace: ['Kolye', 'Tılsım'],
-    earring: ['Küpe'],
-    material: [],
-    consumable: []
-  };
-
-  const rarityPrefixes = {
-    common: 'Eski',
-    uncommon: 'Sağlam',
-    rare: 'Büyülü',
-    epic: 'Kadim',
-    legendary: 'Efsanevi'
-  };
-
-  const baseName = namePrefixes[type] 
-    ? namePrefixes[type][Math.floor(Math.random() * namePrefixes[type].length)] 
-    : 'Eşya';
+export const generateDynamicItem = (
+    targetLevel: number, 
+    baseItems: BaseItem[], 
+    materials: ItemMaterial[], 
+    modifiers: ItemModifier[],
+    forceRarity?: ItemRarity,
+    fixedPrefix?: ItemModifier,
+    fixedSuffix?: ItemModifier
+): Item => {
     
-  const fullName = `${rarityPrefixes[rarity]} ${baseName}`;
+    // 1. Determine Rarity
+    let rarity: ItemRarity = forceRarity || 'common';
+    if (!forceRarity) {
+        const roll = Math.random();
+        if (roll > 0.98) rarity = 'legendary';
+        else if (roll > 0.90) rarity = 'epic';
+        else if (roll > 0.75) rarity = 'rare';
+        else if (roll > 0.50) rarity = 'uncommon';
+    }
 
-  // Requirements logic: Higher rarity/level items need more stats
-  let reqLevel = Math.max(1, level - 2);
-  if (rarity === 'epic') reqLevel = level;
-  if (rarity === 'legendary') reqLevel = level + 2;
+    // 2. Select Base Item (+/- 5 levels)
+    const validBaseItems = baseItems.filter(i => Math.abs(i.minLevel - targetLevel) < 10);
+    const baseItem = validBaseItems.length > 0 
+        ? validBaseItems[Math.floor(Math.random() * validBaseItems.length)]
+        : baseItems[Math.floor(Math.random() * baseItems.length)];
 
-  return {
-    id: Math.random().toString(36).substr(2, 9),
-    name: fullName,
-    type,
-    rarity,
-    stats,
-    value: baseStatVal * 10 * multiplier,
-    description: `${rarity.toUpperCase()} ${type}`,
-    upgradeLevel: 0,
-    reqLevel
-  };
+    // 3. Select Material
+    const validMaterials = materials.filter(m => m.levelReq <= targetLevel + 5);
+    const material = validMaterials.length > 0
+        ? validMaterials[Math.floor(Math.random() * validMaterials.length)]
+        : materials[0];
+
+    // 4. Select Modifiers
+    const validPrefixes = modifiers.filter(m => m.isActive && m.type === 'prefix' && (m.allowedTypes === 'ALL' || m.allowedTypes.includes(baseItem.type)) && !m.isAiOnly);
+    const validSuffixes = modifiers.filter(m => m.isActive && m.type === 'suffix' && (m.allowedTypes === 'ALL' || m.allowedTypes.includes(baseItem.type)) && !m.isAiOnly);
+
+    let prefix: ItemModifier | null = fixedPrefix || null;
+    let suffix: ItemModifier | null = fixedSuffix || null;
+
+    if (!fixedPrefix && !fixedSuffix) {
+        if (rarity === 'uncommon' && Math.random() > 0.5) prefix = validPrefixes[Math.floor(Math.random() * validPrefixes.length)];
+        else if (rarity === 'rare') {
+            prefix = validPrefixes[Math.floor(Math.random() * validPrefixes.length)];
+            if (Math.random() > 0.5) suffix = validSuffixes[Math.floor(Math.random() * validSuffixes.length)];
+        } else if (rarity === 'epic' || rarity === 'legendary') {
+            prefix = validPrefixes[Math.floor(Math.random() * validPrefixes.length)];
+            suffix = validSuffixes[Math.floor(Math.random() * validSuffixes.length)];
+        }
+    }
+
+    // 5. Calculate Stats & Bonuses
+    const finalStats: Partial<Stats> = {};
+    const finalBonuses: ModifierBonus[] = [];
+    const matMult = material.statMultiplier;
+
+    // Base Stats
+    Object.entries(baseItem.baseStats).forEach(([key, val]) => {
+        const k = key as StatType;
+        if (typeof val === 'number') {
+            finalStats[k] = Math.ceil(val * matMult);
+        }
+    });
+
+    // Apply Modifiers
+    [prefix, suffix].forEach(mod => {
+        if (!mod) return;
+        mod.bonuses.forEach(bonus => {
+            // Flatten basic stats into the item stats for easier reading, keep complex ones in bonus array
+            if (bonus.type === 'FLAT' && bonus.mode === 'GLOBAL' && ['STR','AGI','VIT','INT','LUK'].includes(bonus.stat)) {
+                 const current = finalStats[bonus.stat as StatType] || 0;
+                 finalStats[bonus.stat as StatType] = current + bonus.value;
+            }
+            finalBonuses.push(bonus);
+        });
+    });
+
+    // 6. Name
+    let fullName = "";
+    if (material.name !== 'Deri' || baseItem.type !== 'weapon') fullName += material.name + " ";
+    if (prefix) fullName += prefix.name + " ";
+    fullName += baseItem.name;
+    if (suffix) fullName += " " + suffix.name;
+
+    if (material.rarity === 'legendary' || material.rarity === 'epic') {
+        if (rarity !== 'legendary') rarity = material.rarity;
+    }
+
+    return {
+        id: Math.random().toString(36).substr(2, 9),
+        templateId: baseItem.id,
+        name: fullName.trim(),
+        type: baseItem.type,
+        rarity: rarity,
+        stats: finalStats,
+        bonuses: finalBonuses,
+        value: Math.floor((targetLevel * 50) * matMult * (rarity === 'legendary' ? 5 : 1)),
+        description: `${rarity.toUpperCase()} ${baseItem.type} - Lv.${targetLevel}`,
+        upgradeLevel: 0,
+        reqLevel: Math.max(1, Math.floor(targetLevel * 0.8)),
+        count: 1
+    };
+};
+
+export const generateScroll = (modifier: ItemModifier): Item => {
+    return {
+        id: Math.random().toString(36).substr(2, 9),
+        name: `${modifier.name} Parşömeni`,
+        type: 'scroll',
+        rarity: 'rare',
+        stats: {},
+        value: 100,
+        description: `Bu parşömeni okuyarak '${modifier.name}' özelliğini demircide kullanmayı öğrenebilirsin.`,
+        upgradeLevel: 0,
+        linkedModifierId: modifier.id,
+        count: 1
+    };
+};
+
+export const generateFragment = (type: 'prefix' | 'suffix', amount: number): Item => {
+    return {
+        id: type === 'prefix' ? 'frag_prefix' : 'frag_suffix',
+        name: type === 'prefix' ? 'Ön Ek Parçacığı' : 'Son Ek Parçacığı',
+        type: 'material',
+        rarity: 'common',
+        stats: {},
+        value: 10,
+        description: 'Demircide yeni özellikler eklemek için kullanılır.',
+        upgradeLevel: 0,
+        count: amount
+    };
+};
+
+export const addToInventory = (inventory: Item[], newItem: Item): Item[] => {
+    const updated = [...inventory];
+    if (newItem.type === 'material' || newItem.type === 'consumable') {
+        const existingIdx = updated.findIndex(i => i.name === newItem.name && i.rarity === newItem.rarity);
+        if (existingIdx > -1) {
+            updated[existingIdx].count += newItem.count;
+            return updated;
+        }
+    }
+    updated.push(newItem);
+    return updated;
+};
+
+export const removeFromInventory = (inventory: Item[], itemId: string, amount: number = 1): Item[] => {
+    const updated = [];
+    for (const item of inventory) {
+        if (item.id === itemId) {
+            if (item.count > amount) {
+                updated.push({ ...item, count: item.count - amount });
+            } else if (item.count === amount) {
+                // Remove entirely
+            } else {
+                 // Not enough, but logic typically checks beforehand. Just remove.
+            }
+        } else {
+            updated.push(item);
+        }
+    }
+    return updated;
+};
+
+export const getFragmentCount = (inventory: Item[], type: 'prefix' | 'suffix'): number => {
+    const id = type === 'prefix' ? 'frag_prefix' : 'frag_suffix';
+    const item = inventory.find(i => i.id === id);
+    return item ? item.count : 0;
 };
 
 export const calculateUpgradeCost = (item: Item): number => {
@@ -207,22 +325,29 @@ export const calculateSuccessRate = (item: Item, bonus: number = 0): number => {
 };
 
 export const calculateSellPrice = (item: Item): number => {
-    return Math.max(1, Math.floor(item.value * 0.4));
+    return Math.max(1, Math.floor(item.value * 0.4)) * item.count;
 };
 
 export const upgradeItem = (item: Item): Item => {
     const newStats = { ...item.stats };
-    
     (Object.keys(newStats) as Array<keyof Stats>).forEach(key => {
         if (newStats[key]) {
             newStats[key] = Math.ceil(newStats[key]! * 1.1) + 1;
         }
     });
+    return { ...item, stats: newStats, upgradeLevel: item.upgradeLevel + 1, value: Math.floor(item.value * 1.2) };
+};
 
-    return {
-        ...item,
-        stats: newStats,
-        upgradeLevel: item.upgradeLevel + 1,
-        value: Math.floor(item.value * 1.2) 
+export const calculateSalvageReturn = (item: Item): { prefixFrag: number, suffixFrag: number } => {
+    const base = item.rarity === 'legendary' ? 10 : item.rarity === 'epic' ? 5 : item.rarity === 'rare' ? 3 : 1;
+    return { 
+        prefixFrag: Math.floor(base + Math.random() * 3), 
+        suffixFrag: Math.floor(base + Math.random() * 3) 
     };
+};
+
+export const getBlacksmithTime = (type: 'upgrade' | 'salvage' | 'craft', itemLevel: number): number => {
+    // Returns MS
+    const baseTime = type === 'craft' ? 10000 : type === 'salvage' ? 5000 : 3000;
+    return baseTime + (itemLevel * 500);
 };
