@@ -1,3 +1,4 @@
+
 export type StatType = 'STR' | 'AGI' | 'VIT' | 'INT' | 'LUK';
 
 export interface Stats {
@@ -31,7 +32,7 @@ export interface Equipment {
 }
 
 export interface Player {
-  id: string; // Added ID for admin management
+  id: string;
   name: string;
   level: number;
   currentXp: number;
@@ -46,7 +47,16 @@ export interface Player {
   avatarUrl: string;
   equipment: Equipment;
   inventory: Item[];
-  isBanned?: boolean; // Admin flag
+  isBanned?: boolean;
+  
+  // New Expedition System Fields
+  expeditionPoints: number;
+  maxExpeditionPoints: number;
+  nextPointRegenTime: number; // Timestamp for next point
+  nextExpeditionTime: number; // Timestamp for cooldown end
+  
+  // Premium System
+  premiumUntil: number; // Timestamp. 0 if not premium.
 }
 
 export interface Enemy {
@@ -73,13 +83,23 @@ export enum ExpeditionDuration {
   EPIC = 60
 }
 
-export interface ExpeditionLocation {
+export interface Region {
     id: string;
     name: string;
-    duration: ExpeditionDuration;
+    minLevel: number;
+    description: string;
+    imageUrl?: string;
+}
+
+export interface ExpeditionLocation {
+    id: string;
+    regionId: string;
+    name: string;
+    minLevel: number;
+    duration: number; // In seconds (base duration)
     desc: string;
     risk: string;
-    reward: string;
+    rewardRate: number; // Multiplier for gold/xp
 }
 
 export interface RankEntry {
@@ -93,7 +113,7 @@ export interface RankEntry {
 export interface MarketItem {
     id: string;
     name: string;
-    type: ItemType;
+    type: ItemType | 'premium';
     price: number;
     description: string;
     effect?: string;

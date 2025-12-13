@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
 import { MarketItem } from '../types';
-import { Coins, ShoppingBag, X, Check } from 'lucide-react';
+import { Coins, ShoppingBag, X, Check, Crown } from 'lucide-react';
 
 interface MarketProps {
     playerGold: number;
@@ -8,6 +9,7 @@ interface MarketProps {
 }
 
 export const MARKET_ITEMS: MarketItem[] = [
+    { id: 'p1', name: "PREMIUM (15 Gün)", type: 'premium', price: 5000, description: "+%50 Sefer Puanı, -%50 Bekleme Süresi.", icon: "👑" },
     { id: 'm1', name: "Şans Tozu", type: 'material', price: 250, description: "Demirci başarı şansını %20 artırır.", icon: "✨" },
     { id: 'm2', name: "Can İksiri", type: 'consumable', price: 100, description: "Canını tamamen yeniler.", effect: 'heal', icon: "🍷" },
     { id: 'm3', name: "Acemi Sandığı", type: 'consumable', price: 500, description: "Rastgele Common/Uncommon eşya içerir.", effect: 'box_common', icon: "📦" },
@@ -71,9 +73,9 @@ const Market: React.FC<MarketProps> = ({ playerGold, onBuy }) => {
                 {MARKET_ITEMS.map(item => {
                     const canAfford = playerGold >= item.price;
                     return (
-                        <div key={item.id} className="bg-slate-800 border border-slate-600 rounded-xl p-6 flex flex-col items-center text-center hover:border-green-500 transition-colors">
+                        <div key={item.id} className={`bg-slate-800 border ${item.type === 'premium' ? 'border-yellow-600 shadow-[0_0_15px_rgba(234,179,8,0.2)]' : 'border-slate-600'} rounded-xl p-6 flex flex-col items-center text-center hover:border-green-500 transition-colors`}>
                             <div className="text-4xl mb-4 transform hover:scale-110 transition-transform cursor-default">{item.icon}</div>
-                            <h3 className="font-bold text-lg text-white">{item.name}</h3>
+                            <h3 className={`font-bold text-lg ${item.type === 'premium' ? 'text-yellow-500' : 'text-white'}`}>{item.name}</h3>
                             <p className="text-xs text-slate-400 mb-4 h-10">{item.description}</p>
                             <div className="text-yellow-500 font-mono font-bold text-xl mb-4 flex items-center gap-1">
                                 {item.price} <Coins size={16} />

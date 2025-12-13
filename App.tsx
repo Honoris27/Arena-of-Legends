@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Player, StatType, GameLog, ExpeditionDuration, Item, Equipment, ExpeditionLocation, MarketItem } from './types';
-import { calculateMaxHp, calculateMaxXp, calculateMaxMp, generateRandomItem, generateEnemy, calculateDamage, upgradeItem, calculateSellPrice } from './services/gameLogic';
+import { Player, StatType, GameLog, ExpeditionDuration, Item, Equipment, ExpeditionLocation, MarketItem, Region } from './types';
+import { calculateMaxHp, calculateMaxXp, calculateMaxMp, generateRandomItem, calculateSellPrice, upgradeItem, getExpeditionConfig } from './services/gameLogic';
 import { generateExpeditionStory } from './services/geminiService';
 import { supabase, savePlayerProfile, loadPlayerProfile } from './services/supabase';
 import CharacterProfile from './components/CharacterProfile';
@@ -13,15 +14,19 @@ import Blacksmith from './components/Blacksmith';
 import Leaderboard from './components/Leaderboard';
 import Market from './components/Market';
 import Guide from './components/Guide';
-import { User, Map, Swords, Backpack, Coins, ScrollText, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut } from 'lucide-react';
+import { User, Map, Swords, Backpack, Coins, ScrollText, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown } from 'lucide-react';
 
-// DEFAULT LOCATIONS
+// INITIAL DATA
+const INITIAL_REGIONS: Region[] = [
+    { id: 'r1', name: "Karanlık Orman", minLevel: 1, description: "Acemi gladyatörlerin ilk durağı." },
+    { id: 'r2', name: "Lanetli Harabeler", minLevel: 5, description: "Eski bir krallığın kalıntıları." },
+    { id: 'r3', name: "Volkanik Zirve", minLevel: 10, description: "Ateş elementalleri ile dolu." }
+];
+
 const INITIAL_LOCATIONS: ExpeditionLocation[] = [
-  { id: 'l1', name: "Karanlık Orman", duration: ExpeditionDuration.SHORT, desc: "Kısa bir keşif gezisi.", risk: "Düşük", reward: "Az" },
-  { id: 'l2', name: "Lanetli Harabeler", duration: ExpeditionDuration.MEDIUM, desc: "Tehlikeli antik kalıntılar.", risk: "Orta", reward: "Orta" },
-  { id: 'l3', name: "Buzlu Vadi", duration: ExpeditionDuration.MEDIUM, desc: "Dondurucu soğuklar.", risk: "Orta", reward: "Orta" },
-  { id: 'l4', name: "Volkanik Zirve", duration: ExpeditionDuration.LONG, desc: "Ateş elementalleri diyarı.", risk: "Yüksek", reward: "Yüksek" },
-  { id: 'l5', name: "Ölüler Şehri", duration: ExpeditionDuration.EPIC, desc: "Sadece efsaneler dönebilir.", risk: "Ölümcül", reward: "Efsanevi" },
+    { id: 'l1', regionId: 'r1', name: "Orman Girişi", minLevel: 1, duration: 10, risk: "Düşük", rewardRate: 1, desc: "Basit yaratıklar." },
+    { id: 'l2', regionId: 'r1', name: "Kurt İni", minLevel: 2, duration: 20, risk: "Düşük", rewardRate: 1.2, desc: "Kurt sürüleri." },
+    { id: 'l3', regionId: 'r2', name: "Yıkık Tapınak", minLevel: 5, duration: 30, risk: "Orta", rewardRate: 2, desc: "Tuzaklara dikkat et." }
 ];
 
 const DEFAULT_PLAYER: Player = {
@@ -36,7 +41,13 @@ const DEFAULT_PLAYER: Player = {
   hp: 120, maxHp: 120, mp: 50, maxMp: 50,
   avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Spartacus",
   equipment: { weapon: null, helmet: null, armor: null, gloves: null, boots: null },
-  inventory: []
+  inventory: [],
+  // New Expedition Defaults
+  expeditionPoints: 15,
+  maxExpeditionPoints: 15,
+  nextPointRegenTime: Date.now() + (15 * 60 * 1000), // 15 mins
+  nextExpeditionTime: 0,
+  premiumUntil: 0
 };
 
 type View = 'character' | 'expedition' | 'arena' | 'inventory' | 'blacksmith' | 'leaderboard' | 'market';
@@ -44,7 +55,7 @@ type View = 'character' | 'expedition' | 'arena' | 'inventory' | 'blacksmith' | 
 function App() {
   const [session, setSession] = useState<any>(null);
   const [player, setPlayer] = useState<Player>(DEFAULT_PLAYER);
-  const [wins, setWins] = useState(0); // Track wins for leaderboard sync
+  const [wins, setWins] = useState(0); 
   const [currentView, setCurrentView] = useState<View>('character');
   const [logs, setLogs] = useState<GameLog[]>([]);
   const [isBusy, setIsBusy] = useState(false);
@@ -52,9 +63,9 @@ function App() {
   const [showGuide, setShowGuide] = useState(false);
   const [loading, setLoading] = useState(true);
   
+  const [regions, setRegions] = useState<Region[]>(INITIAL_REGIONS);
   const [locations, setLocations] = useState<ExpeditionLocation[]>(INITIAL_LOCATIONS);
   
-  // Use a ref to debounce saves
   const saveTimeout = useRef<any>(null);
 
   // AUTH & INIT
@@ -65,9 +76,7 @@ function App() {
       else setLoading(false);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session) initPlayer(session.user);
       else {
@@ -84,10 +93,19 @@ function App() {
       const profile = await loadPlayerProfile(user.id);
       
       if (profile) {
-          setPlayer(profile);
+          // Merge with default to ensure new fields (points etc) exist if old profile
+          setPlayer({
+              ...DEFAULT_PLAYER,
+              ...profile,
+              // Ensure critical fields exist
+              expeditionPoints: profile.expeditionPoints ?? 15,
+              maxExpeditionPoints: profile.maxExpeditionPoints ?? 15,
+              nextPointRegenTime: profile.nextPointRegenTime ?? (Date.now() + 15*60*1000),
+              nextExpeditionTime: profile.nextExpeditionTime ?? 0,
+              premiumUntil: profile.premiumUntil ?? 0
+          });
           addLog(`Hoş geldin, ${profile.name}!`, 'system');
       } else {
-          // If no profile (first login after register), initialize
           const meta = user.user_metadata;
           const newPlayer = {
               ...DEFAULT_PLAYER,
@@ -106,20 +124,51 @@ function App() {
       await supabase.auth.signOut();
   };
 
+  // PASSIVE REGENERATION LOOP (Expedition Points)
+  useEffect(() => {
+    if (!session || loading) return;
+
+    const interval = setInterval(() => {
+        setPlayer(prev => {
+            const now = Date.now();
+            const config = getExpeditionConfig(prev);
+            
+            // Handle Premium Expiry / Updates to Max Points
+            if (prev.maxExpeditionPoints !== config.maxPoints) {
+                // If premium just expired or activated, update max points
+                 return { ...prev, maxExpeditionPoints: config.maxPoints };
+            }
+
+            // Regen Logic
+            if (prev.expeditionPoints < prev.maxExpeditionPoints) {
+                if (now >= prev.nextPointRegenTime) {
+                    // Regenerate 1 point
+                    const newPoints = prev.expeditionPoints + 1;
+                    const nextRegen = now + (config.regenSeconds * 1000);
+                    return {
+                        ...prev,
+                        expeditionPoints: newPoints,
+                        nextPointRegenTime: nextRegen
+                    };
+                }
+            }
+            return prev;
+        });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [session, loading]);
+
   // AUTO SAVE LOGIC
   useEffect(() => {
       if (!session || loading) return;
-
       if (saveTimeout.current) clearTimeout(saveTimeout.current);
-      
       saveTimeout.current = setTimeout(() => {
           savePlayerProfile(player, wins);
-      }, 2000); // Save 2 seconds after last state change
-
+      }, 2000); 
       return () => clearTimeout(saveTimeout.current);
   }, [player, wins, session, loading]);
 
-  // Game Logic Handlers
   const addLog = (message: string, type: GameLog['type']) => {
     const newLog: GameLog = {
       id: Date.now().toString() + Math.random(),
@@ -146,47 +195,66 @@ function App() {
     });
   };
 
-  const handleExpeditionComplete = async (duration: ExpeditionDuration, locationName: string, isBoss: boolean = false) => {
+  const handleExpeditionComplete = async (duration: number, locationName: string, isBoss: boolean = false) => {
+    // Determine rewards
     let xpGain = 0;
     let goldGain = 0;
     let storyOutcome: 'success' | 'failure' = 'success';
     let droppedItem: Item | null = null;
     let rewardMsg = "";
-    let winCount = 0;
+    
+    // Config for cooldowns
+    const config = getExpeditionConfig(player);
 
     if (isBoss) {
+        // Boss Logic (simplified for now)
         const winChance = 0.5 + (player.level * 0.05);
-        const win = Math.random() < winChance;
-
-        if (win) {
+        if (Math.random() < winChance) {
             xpGain = 500;
             goldGain = 1000;
             droppedItem = generateRandomItem(player.level + 5, 'epic');
-            rewardMsg = `MAĞARA EJDERHASINI YENDİN! ${xpGain} EXP, ${goldGain} Altın`;
-            winCount = 10; // Boss worth more ranking
+            rewardMsg = `EJDERHA YENİLDİ! ${xpGain} XP, ${goldGain} Altın`;
         } else {
             storyOutcome = 'failure';
-            setPlayer(prev => ({ ...prev, hp: 1 }));
-            rewardMsg = "Ejderha seni ağır yaraladı. Kaçtın.";
+            rewardMsg = "Ejderha seni yendi.";
         }
     } else {
-        xpGain = duration * 10 + Math.floor(Math.random() * 10);
-        goldGain = duration * 5 + Math.floor(Math.random() * 15);
-        if (Math.random() < 0.20) {
-            droppedItem = generateRandomItem(player.level);
-        }
+        // Standard Expedition
+        // Base rewards scaled by duration roughly
+        xpGain = duration * 2 + Math.floor(Math.random() * 10);
+        goldGain = duration + Math.floor(Math.random() * 10);
+        
+        if (Math.random() < 0.20) droppedItem = generateRandomItem(player.level);
         rewardMsg = `${xpGain} EXP, ${goldGain} Altın` + (droppedItem ? `, [${droppedItem.name}]` : '');
     }
 
-    setPlayer(prev => ({
-        ...prev,
-        currentXp: prev.currentXp + xpGain,
-        gold: prev.gold + goldGain,
-        inventory: droppedItem ? [...prev.inventory, droppedItem] : prev.inventory
-    }));
-    setWins(w => w + winCount);
+    // Apply updates
+    setPlayer(prev => {
+        // Deduct point (it was checked at start, now consume)
+        const newPoints = prev.expeditionPoints - 1;
+        
+        // If we were at max points, start the regen timer NOW
+        const newRegenTime = prev.expeditionPoints === prev.maxExpeditionPoints 
+            ? Date.now() + (config.regenSeconds * 1000) 
+            : prev.nextPointRegenTime;
+
+        // Set Cooldown
+        const cooldownEnd = Date.now() + (config.cooldownSeconds * 1000);
+
+        return {
+            ...prev,
+            currentXp: prev.currentXp + xpGain,
+            gold: prev.gold + goldGain,
+            inventory: droppedItem ? [...prev.inventory, droppedItem] : prev.inventory,
+            expeditionPoints: Math.max(0, newPoints),
+            nextPointRegenTime: newRegenTime,
+            nextExpeditionTime: cooldownEnd,
+            hp: storyOutcome === 'failure' ? 1 : prev.hp
+        };
+    });
 
     if (!isBoss) {
+        // Async story generation
         const story = await generateExpeditionStory(locationName, storyOutcome, rewardMsg);
         addLog(story, 'expedition');
     } else {
@@ -337,27 +405,28 @@ function App() {
   const handleMarketBuy = (marketItem: MarketItem) => {
       if (player.gold < marketItem.price) return;
 
+      if (marketItem.type === 'premium') {
+          const days = 15;
+          const millis = days * 24 * 60 * 60 * 1000;
+          setPlayer(prev => ({
+              ...prev,
+              gold: prev.gold - marketItem.price,
+              premiumUntil: (prev.premiumUntil > Date.now() ? prev.premiumUntil : Date.now()) + millis,
+              maxExpeditionPoints: 23 // Update max points immediately
+          }));
+          addLog("PREMIUM Üyelik satın alındı!", 'market');
+          return;
+      }
+
       setPlayer(prev => {
           let newInventory = [...prev.inventory];
-          let hp = prev.hp;
           let gold = prev.gold - marketItem.price;
 
-          if (marketItem.type === 'material') {
+          if (marketItem.type === 'material' || marketItem.type === 'consumable') {
               newInventory.push({
                   id: Date.now().toString(),
                   name: marketItem.name,
-                  type: 'material',
-                  rarity: 'common',
-                  stats: {},
-                  value: Math.floor(marketItem.price / 2),
-                  description: marketItem.description,
-                  upgradeLevel: 0
-              });
-          } else if (marketItem.type === 'consumable') {
-              newInventory.push({
-                  id: Date.now().toString(),
-                  name: marketItem.name,
-                  type: 'consumable',
+                  type: marketItem.type,
                   rarity: 'common',
                   stats: {},
                   value: Math.floor(marketItem.price / 2),
@@ -367,7 +436,7 @@ function App() {
           }
 
           addLog(`${marketItem.name} satın alındı.`, 'market');
-          return { ...prev, gold, hp, inventory: newInventory };
+          return { ...prev, gold, inventory: newInventory };
       });
   };
 
@@ -380,18 +449,22 @@ function App() {
       <AdminPanel 
         isOpen={showAdmin} 
         onClose={() => setShowAdmin(false)}
-        users={[player]} // Simplified for demo as we don't fetch all users for admin yet in this version
+        users={[player]} 
         onBanUser={() => {}}
         onDeleteUser={() => {}}
         onEditUser={() => {}}
+        onGivePremium={(id, days) => setPlayer(p => ({...p, premiumUntil: Date.now() + (days * 86400000)}))}
         onAddItemToPlayer={(id, item) => setPlayer(p => ({...p, inventory: [...p.inventory, item]}))}
+        regions={regions}
+        onAddRegion={r => setRegions(prev => [...prev, r])}
+        onDeleteRegion={id => setRegions(prev => prev.filter(r => r.id !== id))}
         locations={locations}
         onAddLocation={(loc) => setLocations(p => [...p, loc])}
         onDeleteLocation={(id) => setLocations(p => p.filter(l => l.id !== id))}
         currentPlayerId={player.id}
         onAddGold={() => setPlayer(p => ({ ...p, gold: p.gold + 1000 }))}
         onLevelUp={() => setPlayer(p => ({ ...p, currentXp: p.maxXp }))}
-        onHeal={() => setPlayer(p => ({ ...p, hp: p.maxHp, mp: p.maxMp }))}
+        onHeal={() => setPlayer(p => ({ ...p, hp: p.maxHp, mp: p.maxMp, expeditionPoints: p.maxExpeditionPoints }))}
       />
 
       <Guide isOpen={showGuide} onClose={() => setShowGuide(false)} />
@@ -412,7 +485,10 @@ function App() {
             <button onClick={() => setShowGuide(true)} className="text-slate-400 hover:text-white"><HelpCircle size={24}/></button>
             <div className="hidden md:flex flex-col items-end mr-2">
                 <span className="text-xs text-slate-400">Gladyatör</span>
-                <span className="font-bold text-sm">{player.name}</span>
+                <span className="font-bold text-sm flex items-center gap-1">
+                    {player.name}
+                    {player.premiumUntil > Date.now() && <Crown size={12} className="text-yellow-500 fill-current"/>}
+                </span>
             </div>
              <button onClick={handleLogout} className="text-red-400 hover:text-red-300" title="Çıkış Yap">
                 <LogOut size={20} />
@@ -477,7 +553,15 @@ function App() {
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
             {currentView === 'character' && <CharacterProfile player={player} onUpgradeStat={handleStatUpgrade} onUnequip={handleUnequipItem} />}
-            {currentView === 'expedition' && <Expedition locations={locations} onComplete={handleExpeditionComplete} isBusy={isBusy} />}
+            {currentView === 'expedition' && (
+                <Expedition 
+                    player={player}
+                    regions={regions}
+                    locations={locations}
+                    onComplete={handleExpeditionComplete} 
+                    isBusy={isBusy} 
+                />
+            )}
             {currentView === 'arena' && <Arena player={player} onWin={handleArenaWin} onLoss={handleArenaLoss} isBusy={isBusy} setBusy={setIsBusy} />}
             {currentView === 'market' && <Market playerGold={player.gold} onBuy={handleMarketBuy} />}
             {currentView === 'inventory' && (

@@ -1,4 +1,26 @@
+
 import { Player, Enemy, Stats, Item, ItemType, ItemRarity } from '../types';
+
+export const isPremium = (player: Player): boolean => {
+    return player.premiumUntil > Date.now();
+};
+
+export const getExpeditionConfig = (player: Player) => {
+    const premium = isPremium(player);
+    return {
+        maxPoints: premium ? 23 : 15, // 15 + 50% approx
+        cooldownSeconds: premium ? 60 : 120, // 2 mins vs 1 min
+        regenSeconds: 15 * 60 // 15 minutes
+    };
+};
+
+export const formatTime = (ms: number): string => {
+    if (ms <= 0) return "00:00";
+    const totalSeconds = Math.ceil(ms / 1000);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
 
 export const calculateMaxXp = (level: number): number => {
   return Math.floor(100 * Math.pow(1.5, level - 1));
