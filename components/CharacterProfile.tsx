@@ -1,8 +1,8 @@
-
-import React, { useState } from 'react';
-import { Player, StatType, Equipment, Item, ItemRarity } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Player, StatType, Equipment, Item, ItemRarity, ItemType } from '../types';
 import { calculateMaxXp, getPlayerTotalStats, calculateSellPrice, canEquipItem } from '../services/gameLogic';
-import { Sword, Shield, Zap, Brain, Clover, Plus, Crown, Hand, Footprints, Coins, CircleDollarSign, Trash2, FlaskConical, Circle } from 'lucide-react';
+import { Sword, Shield, Zap, Brain, Clover, Plus, Crown, Hand, Footprints, Coins, CircleDollarSign, Trash2, FlaskConical, Circle, Search, Filter, X } from 'lucide-react';
+import ItemTooltip from './ItemTooltip';
 
 interface CharacterProfileProps {
   player: Player;
@@ -19,8 +19,8 @@ interface CharacterProfileProps {
 const RARITY_COLORS: Record<ItemRarity, string> = {
   common: 'border-slate-600 bg-slate-800 text-slate-300',
   uncommon: 'border-green-600 bg-green-900/20 text-green-300',
-  rare: 'border-blue-600 bg-blue-900/20 text-blue-300',
-  epic: 'border-purple-600 bg-purple-900/20 text-purple-300',
+  rare: 'border-blue-600 bg-slate-900 text-blue-300',
+  epic: 'border-purple-600 bg-slate-900 text-purple-300',
   legendary: 'border-orange-600 bg-orange-900/20 text-orange-300',
 };
 
@@ -39,62 +39,39 @@ const TYPE_ICONS: any = {
     belt: Circle
 };
 
-const ItemTooltip = ({ item }: { item: Item }) => (
-    <div className="absolute opacity-0 group-hover:opacity-100 transition-opacity duration-200 bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-slate-900 border border-slate-500 rounded-lg shadow-2xl p-3 z-[100] pointer-events-none">
-        <h5 className={`font-bold text-sm mb-1 ${RARITY_COLORS[item.rarity].split(' ').pop()}`}>{item.name} {item.upgradeLevel > 0 ? `+${item.upgradeLevel}` : ''}</h5>
-        <p className="text-[10px] text-slate-400 italic mb-2">{item.description}</p>
-        
-        {/* Requirements */}
-        {(item.reqLevel || item.reqStat) && (
-            <div className="text-[10px] text-red-400 mb-2 border-b border-slate-700 pb-1">
-                {item.reqLevel && <div>Gereken Seviye: {item.reqLevel}</div>}
-                {item.reqStat && <div>Gereken {item.reqStat.stat}: {item.reqStat.value}</div>}
-            </div>
-        )}
+interface EquipmentSlotProps {
+    item: Item | null;
+    slotName: string;
+    icon: React.ElementType;
+    onClick: () => void;
+    onHover: (item: Item) => void;
+    onLeave: () => void;
+}
 
-        <div className="space-y-1 pt-1 mb-2">
-                {Object.entries(item.stats).map(([key, val]) => (
-                    <div key={key} className="flex justify-between text-xs">
-                    <span className="text-slate-300">{key}</span>
-                    <span className="text-green-400 font-mono">+{val}</span>
-                    </div>
-                ))}
-        </div>
-        <div className="text-[10px] text-yellow-500 flex items-center justify-end gap-1">
-            Değer: {item.value} <Coins size={10} />
-        </div>
-    </div>
-);
-
-const EquipmentSlot = ({ 
+const EquipmentSlot: React.FC<EquipmentSlotProps> = ({ 
     item, 
     slotName, 
     icon: Icon,
-    onClick 
-}: { 
-    item: Item | null, 
-    slotName: string, 
-    icon: React.ElementType,
-    onClick: () => void
+    onClick,
+    onHover,
+    onLeave
 }) => {
     const rarityClass = item ? RARITY_COLORS[item.rarity] : 'border-slate-700 bg-slate-900 border-dashed';
 
     return (
         <div 
             onClick={item ? onClick : undefined}
+            onMouseEnter={() => item && onHover(item)}
+            onMouseLeave={onLeave}
             className={`
                 relative w-14 h-14 md:w-16 md:h-16 rounded-lg border-2 flex items-center justify-center cursor-pointer transition-all hover:scale-105 group
                 ${rarityClass}
             `}
         >
             {item ? (
-                <>
-                    <div className="text-center">
-                        <Icon className="mx-auto mb-1 text-white opacity-80" size={20} />
-                    </div>
-                    {/* Tooltip */}
-                    <ItemTooltip item={item} />
-                </>
+                <div className="text-center">
+                    <Icon className="mx-auto mb-1 text-white opacity-80" size={20} />
+                </div>
             ) : (
                 <Icon className="text-slate-600" size={20} />
             )}
@@ -103,44 +80,52 @@ const EquipmentSlot = ({
     );
 };
 
-const InventoryItem = ({ item, onEquip, onUse, onSell, onDelete, player }: any) => {
-    const Icon = TYPE_ICONS[item.type] || Shield;
-    const isEquippable = ['weapon', 'shield', 'armor', 'helmet', 'gloves', 'boots', 'ring', 'necklace', 'earring', 'belt'].includes(item.type);
-    const isConsumable = item.type === 'consumable';
-    const sellPrice = calculateSellPrice(item);
-    
-    const equipCheck = isEquippable ? canEquipItem(player, item) : { can: false };
+// Interface for Display Item (handles stacks)
+interface DisplayItem extends Item {
+    count: number;
+    stackIds: string[]; // IDs of all items in this stack
+}
 
+interface InventoryItemProps {
+    item: DisplayItem;
+    isSelected: boolean;
+    onClick: () => void;
+    onHover: (i: Item) => void;
+    onLeave: () => void;
+}
+
+const InventoryItem: React.FC<InventoryItemProps> = ({ item, isSelected, onClick, onHover, onLeave }) => {
+    const Icon = TYPE_ICONS[item.type] || Shield;
+    
     return (
-        <div className={`relative group p-2 rounded-lg border border-slate-700 hover:border-slate-500 bg-slate-800 transition-all cursor-pointer`}>
-            {/* Badge */}
+        <div 
+            className={`
+                relative group p-2 rounded-lg border-2 transition-all cursor-pointer
+                ${isSelected ? 'border-yellow-500 bg-slate-700' : 'border-slate-700 bg-slate-800 hover:border-slate-500'}
+            `}
+            onClick={onClick}
+            onMouseEnter={() => onHover(item)}
+            onMouseLeave={onLeave}
+        >
+            {/* Upgrade Badge */}
             {item.upgradeLevel > 0 && (
-                <div className="absolute top-1 right-1 bg-yellow-600 text-white text-[9px] font-bold px-1 rounded z-10">
+                <div className="absolute top-1 left-1 bg-yellow-600 text-white text-[9px] font-bold px-1 rounded z-10">
                     +{item.upgradeLevel}
                 </div>
             )}
 
+            {/* Stack Count Badge */}
+            {item.count > 1 && (
+                <div className="absolute top-1 right-1 bg-blue-600 text-white text-[9px] font-bold px-1.5 rounded z-10 shadow-sm">
+                    x{item.count}
+                </div>
+            )}
+
             <div className="flex justify-center mb-1">
-                <Icon size={20} className={isEquippable && !equipCheck.can ? 'opacity-50' : 'text-slate-200'} />
+                <Icon size={24} className={isSelected ? 'text-yellow-100' : 'text-slate-300'} />
             </div>
             
-            <ItemTooltip item={item} />
-
-            {/* Actions Overlay */}
-            <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-center items-center gap-1 rounded-lg z-20">
-                 {isConsumable && (
-                    <button onClick={() => onUse(item)} className="text-[10px] bg-blue-600 text-white px-2 py-1 rounded w-3/4">Kullan</button>
-                 )}
-                 {isEquippable && (
-                     equipCheck.can ? (
-                        <button onClick={() => onEquip(item)} className="text-[10px] bg-green-600 text-white px-2 py-1 rounded w-3/4">Kuşan</button>
-                     ) : (
-                        <span className="text-[9px] text-red-500 font-bold text-center px-1">{equipCheck.reason}</span>
-                     )
-                 )}
-                 <button onClick={() => onSell(item)} className="text-[10px] bg-yellow-600/50 text-yellow-200 px-2 py-1 rounded w-3/4 flex justify-center gap-1"><CircleDollarSign size={10}/> {sellPrice}</button>
-                 <button onClick={() => onDelete(item)} className="text-[10px] bg-red-600/50 text-red-200 px-2 py-1 rounded w-3/4"><Trash2 size={10}/></button>
-            </div>
+            <div className="text-[10px] text-center truncate text-slate-400">{item.name}</div>
         </div>
     );
 };
@@ -175,9 +160,109 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
   const maxXp = calculateMaxXp(player.level);
   const xpPercentage = Math.min(100, (player.currentXp / maxXp) * 100);
 
+  // Floating Tooltip State
+  const [hoveredItem, setHoveredItem] = useState<Item | null>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  // Inventory Logic State
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState<DisplayItem | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterType, setFilterType] = useState<'all' | 'equip' | 'consumable' | 'material'>('all');
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+        setMousePos({ x: e.clientX, y: e.clientY });
+    };
+    if (hoveredItem) {
+        window.addEventListener('mousemove', handleMouseMove);
+    }
+    return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+    };
+  }, [hoveredItem]);
+
+  // Process Inventory (Stacking & Filtering)
+  const processedInventory = useMemo(() => {
+      const grouped: DisplayItem[] = [];
+      const stackableTypes: ItemType[] = ['material', 'consumable'];
+
+      player.inventory.forEach(item => {
+          // Check if item should stack
+          if (stackableTypes.includes(item.type)) {
+              const existingIndex = grouped.findIndex(g => g.name === item.name && g.rarity === item.rarity);
+              if (existingIndex > -1) {
+                  grouped[existingIndex].count += 1;
+                  grouped[existingIndex].stackIds.push(item.id);
+                  // Update value to reflect total? No, value per unit usually.
+              } else {
+                  grouped.push({ ...item, count: 1, stackIds: [item.id] });
+              }
+          } else {
+              // Unique items (Equipment) do not stack
+              grouped.push({ ...item, count: 1, stackIds: [item.id] });
+          }
+      });
+
+      // Filter
+      return grouped.filter(item => {
+          const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+          const matchesType = 
+            filterType === 'all' ? true :
+            filterType === 'equip' ? ['weapon', 'shield', 'armor', 'helmet', 'gloves', 'boots', 'ring', 'necklace', 'earring', 'belt'].includes(item.type) :
+            filterType === 'consumable' ? item.type === 'consumable' :
+            filterType === 'material' ? item.type === 'material' : true;
+          
+          return matchesSearch && matchesType;
+      });
+  }, [player.inventory, searchTerm, filterType]);
+
+  // Handle Multi-Item Operations for Stacks
+  const handleBatchSell = (displayItem: DisplayItem) => {
+      // Find the actual item object to pass to the original handler (usually just one is processed at a time in game logic)
+      // Logic: Pass one item ID from the stack.
+      const realItem = player.inventory.find(i => i.id === displayItem.stackIds[0]);
+      if(realItem) onSell(realItem);
+      // Reset selection if it was the last one
+      if(displayItem.count <= 1) setSelectedInventoryItem(null);
+  };
+
+  const handleBatchDelete = (displayItem: DisplayItem) => {
+      const realItem = player.inventory.find(i => i.id === displayItem.stackIds[0]);
+      if(realItem) onDelete(realItem);
+      if(displayItem.count <= 1) setSelectedInventoryItem(null);
+  };
+
+  const handleBatchUse = (displayItem: DisplayItem) => {
+      const realItem = player.inventory.find(i => i.id === displayItem.stackIds[0]);
+      if(realItem) onUse(realItem);
+      if(displayItem.count <= 1) setSelectedInventoryItem(null);
+  };
+
+  const handleSingleEquip = (displayItem: DisplayItem) => {
+      const realItem = player.inventory.find(i => i.id === displayItem.stackIds[0]);
+      if(realItem) onEquip(realItem);
+      setSelectedInventoryItem(null);
+  }
+
+
   return (
-    <div className="max-w-6xl mx-auto pb-10 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div className="max-w-6xl mx-auto pb-10 grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
       
+      {/* GLOBAL FLOATING TOOLTIP */}
+      {hoveredItem && (
+          <div 
+            style={{ 
+                position: 'fixed', 
+                top: mousePos.y + 15, 
+                left: Math.min(mousePos.x + 15, window.innerWidth - 270), 
+                zIndex: 9999,
+                pointerEvents: 'none'
+            }}
+          >
+              <ItemTooltip item={hoveredItem} fixed />
+          </div>
+      )}
+
       {/* LEFT COLUMN: Paper Doll & Stats */}
       <div className="lg:col-span-5 space-y-6">
           
@@ -206,11 +291,11 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
               <div className="flex gap-8 mt-4">
                   {/* Left Column */}
                   <div className="flex flex-col gap-6">
-                      <EquipmentSlot item={player.equipment.helmet} slotName="Kask" icon={Crown} onClick={() => onUnequip('helmet')} />
-                      <EquipmentSlot item={player.equipment.armor} slotName="Zırh" icon={Shield} onClick={() => onUnequip('armor')} />
-                      <EquipmentSlot item={player.equipment.gloves} slotName="Eldiven" icon={Hand} onClick={() => onUnequip('gloves')} />
-                      <EquipmentSlot item={player.equipment.belt} slotName="Kemer" icon={Circle} onClick={() => onUnequip('belt')} />
-                      <EquipmentSlot item={player.equipment.boots} slotName="Bot" icon={Footprints} onClick={() => onUnequip('boots')} />
+                      <EquipmentSlot item={player.equipment.helmet} slotName="Kask" icon={Crown} onClick={() => onUnequip('helmet')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
+                      <EquipmentSlot item={player.equipment.armor} slotName="Zırh" icon={Shield} onClick={() => onUnequip('armor')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
+                      <EquipmentSlot item={player.equipment.gloves} slotName="Eldiven" icon={Hand} onClick={() => onUnequip('gloves')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
+                      <EquipmentSlot item={player.equipment.belt} slotName="Kemer" icon={Circle} onClick={() => onUnequip('belt')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
+                      <EquipmentSlot item={player.equipment.boots} slotName="Bot" icon={Footprints} onClick={() => onUnequip('boots')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
                   </div>
 
                   {/* Center Character Placeholder (Visual only) */}
@@ -220,14 +305,14 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
 
                   {/* Right Column */}
                   <div className="flex flex-col gap-6">
-                      <EquipmentSlot item={player.equipment.necklace} slotName="Kolye" icon={Circle} onClick={() => onUnequip('necklace')} />
+                      <EquipmentSlot item={player.equipment.necklace} slotName="Kolye" icon={Circle} onClick={() => onUnequip('necklace')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
                       <div className="flex gap-2">
-                           <EquipmentSlot item={player.equipment.weapon} slotName="Silah" icon={Sword} onClick={() => onUnequip('weapon')} />
-                           <EquipmentSlot item={player.equipment.shield} slotName="Kalkan" icon={Shield} onClick={() => onUnequip('shield')} />
+                           <EquipmentSlot item={player.equipment.weapon} slotName="Silah" icon={Sword} onClick={() => onUnequip('weapon')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
+                           <EquipmentSlot item={player.equipment.shield} slotName="Kalkan" icon={Shield} onClick={() => onUnequip('shield')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
                       </div>
                       <div className="flex gap-2">
-                           <EquipmentSlot item={player.equipment.ring} slotName="Yüzük" icon={Circle} onClick={() => onUnequip('ring')} />
-                           <EquipmentSlot item={player.equipment.earring} slotName="Küpe" icon={Circle} onClick={() => onUnequip('earring')} />
+                           <EquipmentSlot item={player.equipment.ring} slotName="Yüzük" icon={Circle} onClick={() => onUnequip('ring')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
+                           <EquipmentSlot item={player.equipment.earring} slotName="Küpe" icon={Circle} onClick={() => onUnequip('earring')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
                       </div>
                   </div>
               </div>
@@ -261,35 +346,131 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
 
       </div>
 
-      {/* RIGHT COLUMN: Inventory Grid */}
-      <div className="lg:col-span-7 bg-slate-800/80 border border-slate-600 rounded-xl p-4 flex flex-col h-full min-h-[500px]">
-          <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
-              <h3 className="font-bold text-white flex items-center gap-2"><Coins className="text-yellow-500"/> Çanta</h3>
-              <div className="text-xs text-slate-400">{player.inventory.length} Eşya</div>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar">
-              {player.inventory.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-50">
-                      <Coins size={48} className="mb-2"/>
-                      <p>Çantanız boş.</p>
+      {/* RIGHT COLUMN: Inventory Grid & Management */}
+      <div className="lg:col-span-7 flex flex-col gap-4">
+          <div className="bg-slate-800/80 border border-slate-600 rounded-xl flex flex-col h-[500px]">
+              
+              {/* Toolbar */}
+              <div className="p-4 border-b border-slate-700 flex flex-col md:flex-row gap-3 justify-between items-center">
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                      <h3 className="font-bold text-white flex items-center gap-2"><Coins className="text-yellow-500"/> Çanta</h3>
+                      <span className="text-xs text-slate-500">({player.inventory.length} / 100)</span>
                   </div>
-              ) : (
-                  <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 gap-2">
-                      {player.inventory.map((item, idx) => (
-                          <InventoryItem 
-                            key={item.id} 
-                            item={item} 
-                            player={player}
-                            onEquip={onEquip} 
-                            onUse={onUse} 
-                            onSell={onSell} 
-                            onDelete={onDelete} 
+
+                  <div className="flex items-center gap-2 w-full md:w-auto">
+                      {/* Search */}
+                      <div className="relative flex-1 md:w-40">
+                          <Search size={14} className="absolute left-2 top-2.5 text-slate-500"/>
+                          <input 
+                            type="text" 
+                            placeholder="Ara..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded py-1.5 pl-7 pr-2 text-xs text-white focus:border-yellow-500 outline-none"
                           />
-                      ))}
+                      </div>
+                      
+                      {/* Filters */}
+                      <select 
+                        value={filterType} 
+                        onChange={(e) => setFilterType(e.target.value as any)}
+                        className="bg-slate-900 border border-slate-700 rounded py-1.5 px-2 text-xs text-white outline-none"
+                      >
+                          <option value="all">Tümü</option>
+                          <option value="equip">Ekipman</option>
+                          <option value="consumable">Tüketilebilir</option>
+                          <option value="material">Materyal</option>
+                      </select>
                   </div>
-              )}
+              </div>
+              
+              {/* Inventory Grid */}
+              <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                  {processedInventory.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-500 opacity-50">
+                          <Coins size={48} className="mb-2"/>
+                          <p>Eşya bulunamadı.</p>
+                      </div>
+                  ) : (
+                      <div className="grid grid-cols-5 md:grid-cols-6 lg:grid-cols-7 gap-2 content-start">
+                          {processedInventory.map((item, idx) => (
+                              <InventoryItem 
+                                key={idx} // Using Index because ID might be shared in stack render logic, ideally use unique composite key
+                                item={item}
+                                isSelected={selectedInventoryItem?.name === item.name && selectedInventoryItem?.rarity === item.rarity}
+                                onClick={() => setSelectedInventoryItem(item)}
+                                onHover={setHoveredItem}
+                                onLeave={() => setHoveredItem(null)}
+                              />
+                          ))}
+                      </div>
+                  )}
+              </div>
           </div>
+
+          {/* Selected Item Actions Panel */}
+          {selectedInventoryItem ? (
+             <div className="bg-slate-800 border border-slate-600 rounded-xl p-4 animate-fade-in flex flex-col md:flex-row gap-4 items-center justify-between">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-slate-900 rounded border border-slate-600 flex items-center justify-center">
+                         {/* Icon placeholder logic */}
+                         <Shield className="text-slate-500" />
+                    </div>
+                    <div>
+                        <h4 className="font-bold text-white text-sm">{selectedInventoryItem.name}</h4>
+                        <div className="flex gap-2 text-xs text-slate-400">
+                            <span>{selectedInventoryItem.type}</span>
+                            <span className="text-yellow-600">{calculateSellPrice(selectedInventoryItem)} Altın</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex gap-2 w-full md:w-auto">
+                    {['weapon', 'shield', 'armor', 'helmet', 'gloves', 'boots', 'ring', 'necklace', 'earring', 'belt'].includes(selectedInventoryItem.type) && (
+                         <button 
+                            onClick={() => handleSingleEquip(selectedInventoryItem)} 
+                            className="flex-1 md:flex-none px-4 py-2 bg-green-700 hover:bg-green-600 text-white text-xs font-bold rounded flex items-center justify-center gap-2"
+                         >
+                            <Shield size={14}/> Kuşan
+                         </button>
+                    )}
+                    
+                    {selectedInventoryItem.type === 'consumable' && (
+                        <button 
+                             onClick={() => handleBatchUse(selectedInventoryItem)}
+                             className="flex-1 md:flex-none px-4 py-2 bg-blue-700 hover:bg-blue-600 text-white text-xs font-bold rounded flex items-center justify-center gap-2"
+                        >
+                            <FlaskConical size={14}/> Kullan
+                        </button>
+                    )}
+
+                    <button 
+                        onClick={() => handleBatchSell(selectedInventoryItem)}
+                        className="flex-1 md:flex-none px-4 py-2 bg-yellow-700/50 hover:bg-yellow-700 text-yellow-200 text-xs font-bold rounded flex items-center justify-center gap-2"
+                    >
+                        <CircleDollarSign size={14}/> Sat
+                    </button>
+
+                    <button 
+                        onClick={() => handleBatchDelete(selectedInventoryItem)}
+                        className="flex-1 md:flex-none px-4 py-2 bg-red-900/50 hover:bg-red-800 text-red-300 text-xs font-bold rounded flex items-center justify-center gap-2"
+                    >
+                        <Trash2 size={14}/> Sil
+                    </button>
+
+                    <button 
+                        onClick={() => setSelectedInventoryItem(null)}
+                        className="px-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+             </div>
+          ) : (
+            <div className="bg-slate-800/50 border border-slate-700 border-dashed rounded-xl p-6 text-center text-slate-500 text-sm">
+                İşlem yapmak için çantadan bir eşya seçin.
+            </div>
+          )}
       </div>
 
     </div>

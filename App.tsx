@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Player, StatType, ExpeditionDuration, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, Role } from './types';
+import { Player, StatType, ExpeditionDuration, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, Role, EnemyTemplate } from './types';
 import { calculateMaxHp, calculateMaxXp, calculateMaxMp, generateRandomItem, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem } from './services/gameLogic';
 import { generateExpeditionStory } from './services/geminiService';
 import { supabase, savePlayerProfile, loadPlayerProfile } from './services/supabase';
@@ -71,6 +71,7 @@ function App() {
   const [announcements, setAnnouncements] = useState<Announcement[]>([
     { id: 'a1', title: "Arena of Legends Başladı!", content: "Tüm gladyatörlere başarılar. Arena kapıları açıldı.", timestamp: Date.now(), type: 'general' }
   ]);
+  const [enemyTemplates, setEnemyTemplates] = useState<EnemyTemplate[]>([]);
   
   const saveTimeout = useRef<any>(null);
 
@@ -538,6 +539,9 @@ function App() {
         onAddLocation={(loc) => setLocations(p => [...p, loc])}
         onDeleteLocation={(id) => setLocations(p => p.filter(l => l.id !== id))}
         onAddAnnouncement={(ann) => setAnnouncements(prev => [ann, ...prev])}
+        enemyTemplates={enemyTemplates}
+        onAddEnemyTemplate={(tpl) => setEnemyTemplates(prev => [...prev, tpl])}
+        onDeleteEnemyTemplate={(id) => setEnemyTemplates(prev => prev.filter(e => e.id !== id))}
         currentPlayerId={player.id}
         onAddGold={() => setPlayer(p => ({ ...p, gold: p.gold + 1000 }))}
         onLevelUp={() => setPlayer(p => ({ ...p, currentXp: p.maxXp }))}
@@ -651,7 +655,7 @@ function App() {
                     onLoss={handleArenaLoss} 
                     isBusy={isBusy} 
                     setBusy={setIsBusy} 
-                    // Add logic to check health inside arena start if needed, but App check handles start
+                    // Pass templates later if Arena is updated to use them
                 />
             )}
             {currentView === 'market' && <Market playerGold={player.gold} onBuy={handleMarketBuy} />}

@@ -30,15 +30,15 @@ export interface Item {
 
 export interface Equipment {
   weapon: Item | null;
-  shield: Item | null; // Added
+  shield: Item | null; 
   helmet: Item | null;
   armor: Item | null;
   gloves: Item | null;
   boots: Item | null;
-  necklace: Item | null; // Added
-  ring: Item | null; // Added
-  earring: Item | null; // Added
-  belt: Item | null; // Added
+  necklace: Item | null; 
+  ring: Item | null; 
+  earring: Item | null; 
+  belt: Item | null; 
 }
 
 export interface Message {
@@ -53,7 +53,7 @@ export interface Message {
 export interface CombatReport {
     id: string;
     title: string;
-    details: string[]; // Array of log lines
+    details: string[]; 
     rewards: string;
     timestamp: number;
     type: 'expedition' | 'arena' | 'defense';
@@ -72,7 +72,7 @@ export interface Announcement {
 export interface Player {
   id: string;
   name: string;
-  role: Role; // Added Role
+  role: Role; 
   bio?: string;
   level: number;
   currentXp: number;
@@ -98,6 +98,16 @@ export interface Player {
 
   messages: Message[];
   reports: CombatReport[];
+}
+
+export interface EnemyTemplate {
+    id: string;
+    name: string;
+    minLevel: number;
+    maxLevel: number;
+    statsMultiplier: number;
+    isBoss: boolean;
+    description: string;
 }
 
 export interface Enemy {
