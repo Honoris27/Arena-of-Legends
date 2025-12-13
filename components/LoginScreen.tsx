@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Lock, ArrowRight, Mail, AlertCircle } from 'lucide-react';
+import { User, Lock, ArrowRight, Mail, AlertCircle, CheckCircle } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 interface LoginScreenProps {
@@ -21,10 +21,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [selectedAvatar, setSelectedAvatar] = useState(AVATARS[0]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccess(null);
     setLoading(true);
 
     try {
@@ -43,7 +45,15 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             });
 
             if (signUpError) throw signUpError;
-            // Auto login usually happens, or handled by App session listener
+            
+            // Eğer session yoksa (e-posta onayı gerekiyorsa)
+            if (data.user && !data.session) {
+                setLoading(false);
+                setSuccess("Kayıt başarılı! Giriş yapabilmek için lütfen e-postanızı onaylayın.");
+                return;
+            }
+            
+            // Auto login handled by App session listener if session exists
         } else {
             const { error: signInError } = await supabase.auth.signInWithPassword({
                 email,
@@ -52,7 +62,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
             if (signInError) throw signInError;
         }
-        // Success handled by Auth State Listener in App.tsx
     } catch (err: any) {
         console.error(err);
         setError(err.message || "Bir hata oluştu.");
@@ -75,13 +84,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         {/* Tabs */}
         <div className="flex mb-6 bg-slate-800 rounded-lg p-1">
             <button 
-                onClick={() => { setIsRegister(false); setError(null); }}
+                onClick={() => { setIsRegister(false); setError(null); setSuccess(null); }}
                 className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${!isRegister ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
             >
                 Giriş Yap
             </button>
             <button 
-                onClick={() => { setIsRegister(true); setError(null); }}
+                onClick={() => { setIsRegister(true); setError(null); setSuccess(null); }}
                 className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${isRegister ? 'bg-slate-700 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
             >
                 Kayıt Ol
@@ -93,6 +102,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             {error && (
                 <div className="bg-red-900/50 border border-red-500/50 text-red-200 text-xs p-3 rounded flex items-center gap-2">
                     <AlertCircle size={16} /> {error}
+                </div>
+            )}
+
+            {success && (
+                <div className="bg-green-900/50 border border-green-500/50 text-green-200 text-xs p-3 rounded flex items-center gap-2">
+                    <CheckCircle size={16} /> {success}
                 </div>
             )}
 
