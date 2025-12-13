@@ -1,20 +1,21 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Player, StatType, GameLog, ExpeditionDuration, Item, Equipment, ExpeditionLocation, MarketItem, Region } from './types';
-import { calculateMaxHp, calculateMaxXp, calculateMaxMp, generateRandomItem, calculateSellPrice, upgradeItem, getExpeditionConfig } from './services/gameLogic';
+import { Player, StatType, ExpeditionDuration, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, Role } from './types';
+import { calculateMaxHp, calculateMaxXp, calculateMaxMp, generateRandomItem, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem } from './services/gameLogic';
 import { generateExpeditionStory } from './services/geminiService';
 import { supabase, savePlayerProfile, loadPlayerProfile } from './services/supabase';
 import CharacterProfile from './components/CharacterProfile';
 import Expedition from './components/Expedition';
 import Arena from './components/Arena';
-import Inventory from './components/Inventory';
+// Inventory merged into CharacterProfile, so removing separate import if not used elsewhere, but keeping import clean
 import AdminPanel from './components/AdminPanel';
 import LoginScreen from './components/LoginScreen';
 import Blacksmith from './components/Blacksmith';
 import Leaderboard from './components/Leaderboard';
 import Market from './components/Market';
 import Guide from './components/Guide';
-import { User, Map, Swords, Backpack, Coins, ScrollText, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown } from 'lucide-react';
+import Mailbox from './components/Mailbox';
+import { User, Map, Swords, Backpack, Coins, ScrollText, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown, Mail } from 'lucide-react';
 
 // INITIAL DATA
 const INITIAL_REGIONS: Region[] = [
@@ -24,14 +25,15 @@ const INITIAL_REGIONS: Region[] = [
 ];
 
 const INITIAL_LOCATIONS: ExpeditionLocation[] = [
-    { id: 'l1', regionId: 'r1', name: "Orman Girişi", minLevel: 1, duration: 10, risk: "Düşük", rewardRate: 1, desc: "Basit yaratıklar." },
-    { id: 'l2', regionId: 'r1', name: "Kurt İni", minLevel: 2, duration: 20, risk: "Düşük", rewardRate: 1.2, desc: "Kurt sürüleri." },
-    { id: 'l3', regionId: 'r2', name: "Yıkık Tapınak", minLevel: 5, duration: 30, risk: "Orta", rewardRate: 2, desc: "Tuzaklara dikkat et." }
+    { id: 'l1', regionId: 'r1', name: "Orman Girişi", minLevel: 1, duration: 1, risk: "Düşük", rewardRate: 1, desc: "Basit yaratıklar." },
+    { id: 'l2', regionId: 'r1', name: "Kurt İni", minLevel: 2, duration: 2, risk: "Düşük", rewardRate: 1.2, desc: "Kurt sürüleri." },
+    { id: 'l3', regionId: 'r2', name: "Yıkık Tapınak", minLevel: 5, duration: 3, risk: "Orta", rewardRate: 2, desc: "Tuzaklara dikkat et." }
 ];
 
 const DEFAULT_PLAYER: Player = {
   id: '',
   name: "Bilinmeyen",
+  role: 'player',
   level: 1,
   currentXp: 0,
   maxXp: 100,
@@ -40,14 +42,15 @@ const DEFAULT_PLAYER: Player = {
   statPoints: 5,
   hp: 120, maxHp: 120, mp: 50, maxMp: 50,
   avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Spartacus",
-  equipment: { weapon: null, helmet: null, armor: null, gloves: null, boots: null },
+  equipment: { weapon: null, shield: null, helmet: null, armor: null, gloves: null, boots: null, necklace: null, ring: null, earring: null, belt: null },
   inventory: [],
-  // New Expedition Defaults
   expeditionPoints: 15,
   maxExpeditionPoints: 15,
-  nextPointRegenTime: Date.now() + (15 * 60 * 1000), // 15 mins
+  nextPointRegenTime: Date.now() + (15 * 60 * 1000), 
   nextExpeditionTime: 0,
-  premiumUntil: 0
+  premiumUntil: 0,
+  messages: [],
+  reports: []
 };
 
 type View = 'character' | 'expedition' | 'arena' | 'inventory' | 'blacksmith' | 'leaderboard' | 'market';
@@ -57,14 +60,17 @@ function App() {
   const [player, setPlayer] = useState<Player>(DEFAULT_PLAYER);
   const [wins, setWins] = useState(0); 
   const [currentView, setCurrentView] = useState<View>('character');
-  const [logs, setLogs] = useState<GameLog[]>([]);
   const [isBusy, setIsBusy] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
+  const [showMailbox, setShowMailbox] = useState(false);
   const [loading, setLoading] = useState(true);
   
   const [regions, setRegions] = useState<Region[]>(INITIAL_REGIONS);
   const [locations, setLocations] = useState<ExpeditionLocation[]>(INITIAL_LOCATIONS);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([
+    { id: 'a1', title: "Arena of Legends Başladı!", content: "Tüm gladyatörlere başarılar. Arena kapıları açıldı.", timestamp: Date.now(), type: 'general' }
+  ]);
   
   const saveTimeout = useRef<any>(null);
 
@@ -93,29 +99,40 @@ function App() {
       const profile = await loadPlayerProfile(user.id);
       
       if (profile) {
-          // Merge with default to ensure new fields (points etc) exist if old profile
-          setPlayer({
+          // Merge allowing for new fields like role and new equipment slots
+          setPlayer(prev => ({
               ...DEFAULT_PLAYER,
               ...profile,
-              // Ensure critical fields exist
+              // Ensure critical fields exist and merge equipment for new slots
+              equipment: { ...DEFAULT_PLAYER.equipment, ...profile.equipment },
               expeditionPoints: profile.expeditionPoints ?? 15,
               maxExpeditionPoints: profile.maxExpeditionPoints ?? 15,
               nextPointRegenTime: profile.nextPointRegenTime ?? (Date.now() + 15*60*1000),
               nextExpeditionTime: profile.nextExpeditionTime ?? 0,
-              premiumUntil: profile.premiumUntil ?? 0
-          });
-          addLog(`Hoş geldin, ${profile.name}!`, 'system');
+              premiumUntil: profile.premiumUntil ?? 0,
+              messages: profile.messages || [],
+              reports: profile.reports || [],
+              role: profile.role || 'player'
+          }));
       } else {
           const meta = user.user_metadata;
-          const newPlayer = {
+          const newPlayer: Player = {
               ...DEFAULT_PLAYER,
               id: user.id,
               name: meta.full_name || 'Gladyatör',
-              avatarUrl: meta.avatar_url || DEFAULT_PLAYER.avatarUrl
+              avatarUrl: meta.avatar_url || DEFAULT_PLAYER.avatarUrl,
+              messages: [{
+                  id: 'welcome',
+                  sender: 'Sistem',
+                  subject: 'Hoş Geldin!',
+                  content: 'Arena of Legends\'a hoş geldin gladyatör. Efsaneni yazmaya başla.',
+                  timestamp: Date.now(),
+                  read: false
+              }],
+              role: 'player'
           };
           setPlayer(newPlayer);
           await savePlayerProfile(newPlayer, 0);
-          addLog("Yeni profil oluşturuldu.", 'system');
       }
       setLoading(false);
   };
@@ -124,7 +141,7 @@ function App() {
       await supabase.auth.signOut();
   };
 
-  // PASSIVE REGENERATION LOOP (Expedition Points)
+  // REGEN LOOP
   useEffect(() => {
     if (!session || loading) return;
 
@@ -133,16 +150,12 @@ function App() {
             const now = Date.now();
             const config = getExpeditionConfig(prev);
             
-            // Handle Premium Expiry / Updates to Max Points
             if (prev.maxExpeditionPoints !== config.maxPoints) {
-                // If premium just expired or activated, update max points
                  return { ...prev, maxExpeditionPoints: config.maxPoints };
             }
 
-            // Regen Logic
             if (prev.expeditionPoints < prev.maxExpeditionPoints) {
                 if (now >= prev.nextPointRegenTime) {
-                    // Regenerate 1 point
                     const newPoints = prev.expeditionPoints + 1;
                     const nextRegen = now + (config.regenSeconds * 1000);
                     return {
@@ -159,7 +172,7 @@ function App() {
     return () => clearInterval(interval);
   }, [session, loading]);
 
-  // AUTO SAVE LOGIC
+  // AUTO SAVE
   useEffect(() => {
       if (!session || loading) return;
       if (saveTimeout.current) clearTimeout(saveTimeout.current);
@@ -169,15 +182,6 @@ function App() {
       return () => clearTimeout(saveTimeout.current);
   }, [player, wins, session, loading]);
 
-  const addLog = (message: string, type: GameLog['type']) => {
-    const newLog: GameLog = {
-      id: Date.now().toString() + Math.random(),
-      timestamp: Date.now(),
-      message,
-      type
-    };
-    setLogs(prev => [newLog, ...prev].slice(0, 50));
-  };
 
   const handleStatUpgrade = (stat: StatType) => {
     if (player.statPoints <= 0) return;
@@ -195,23 +199,57 @@ function App() {
     });
   };
 
-  const handleExpeditionComplete = async (duration: number, locationName: string, isBoss: boolean = false) => {
-    // Determine rewards
+  // Level Up Helper
+  const checkLevelUp = (p: Player): Player => {
+      if (p.currentXp >= p.maxXp) {
+          const newLevel = p.level + 1;
+          const newMaxXp = calculateMaxXp(newLevel);
+          const newMaxHp = calculateMaxHp(p.stats.VIT, newLevel);
+          const newMaxMp = calculateMaxMp(p.stats.INT, newLevel);
+          
+          alert("TEBRİKLER! Seviye Atladın! Sefer Puanların yenilendi.");
+
+          return {
+              ...p,
+              level: newLevel,
+              currentXp: p.currentXp - p.maxXp,
+              maxXp: newMaxXp,
+              maxHp: newMaxHp,
+              maxMp: newMaxMp,
+              hp: newMaxHp, // Heal on level up
+              mp: newMaxMp,
+              statPoints: p.statPoints + 5,
+              expeditionPoints: p.maxExpeditionPoints // REFILL POINTS
+          };
+      }
+      return p;
+  };
+
+  // HP Check
+  const checkHealth = (): boolean => {
+      if (player.hp < player.maxHp * 0.25) {
+          alert("Canın çok az! (%25'in altında). Savaşamazsın.");
+          return false;
+      }
+      return true;
+  }
+
+  const handleExpeditionComplete = async (rewardMultiplier: number, locationName: string, isBoss: boolean = false) => {
+    if (!checkHealth()) return;
+
     let xpGain = 0;
     let goldGain = 0;
     let storyOutcome: 'success' | 'failure' = 'success';
     let droppedItem: Item | null = null;
     let rewardMsg = "";
     
-    // Config for cooldowns
     const config = getExpeditionConfig(player);
 
     if (isBoss) {
-        // Boss Logic (simplified for now)
         const winChance = 0.5 + (player.level * 0.05);
         if (Math.random() < winChance) {
-            xpGain = 500;
-            goldGain = 1000;
+            xpGain = 1000 * rewardMultiplier;
+            goldGain = 2000 * rewardMultiplier;
             droppedItem = generateRandomItem(player.level + 5, 'epic');
             rewardMsg = `EJDERHA YENİLDİ! ${xpGain} XP, ${goldGain} Altın`;
         } else {
@@ -219,29 +257,42 @@ function App() {
             rewardMsg = "Ejderha seni yendi.";
         }
     } else {
-        // Standard Expedition
-        // Base rewards scaled by duration roughly
-        xpGain = duration * 2 + Math.floor(Math.random() * 10);
-        goldGain = duration + Math.floor(Math.random() * 10);
+        xpGain = Math.floor((10 + Math.random() * 10) * rewardMultiplier);
+        goldGain = Math.floor((5 + Math.random() * 10) * rewardMultiplier);
         
         if (Math.random() < 0.20) droppedItem = generateRandomItem(player.level);
         rewardMsg = `${xpGain} EXP, ${goldGain} Altın` + (droppedItem ? `, [${droppedItem.name}]` : '');
     }
 
-    // Apply updates
+    // Generate Story
+    let reportLog = [`Konum: ${locationName}`];
+    if (!isBoss) {
+        const story = await generateExpeditionStory(locationName, storyOutcome, rewardMsg);
+        reportLog.push(story);
+    } else {
+        reportLog.push(rewardMsg);
+    }
+
     setPlayer(prev => {
-        // Deduct point (it was checked at start, now consume)
         const newPoints = prev.expeditionPoints - 1;
-        
-        // If we were at max points, start the regen timer NOW
         const newRegenTime = prev.expeditionPoints === prev.maxExpeditionPoints 
             ? Date.now() + (config.regenSeconds * 1000) 
             : prev.nextPointRegenTime;
-
-        // Set Cooldown
         const cooldownEnd = Date.now() + (config.cooldownSeconds * 1000);
 
-        return {
+        // Deduct HP logic
+        let newHp = prev.hp;
+        if (storyOutcome === 'success') {
+            // Success takes some toll (5-15% damage)
+            const dmg = Math.floor(prev.maxHp * (0.05 + Math.random() * 0.1));
+            newHp = Math.max(1, prev.hp - dmg);
+            reportLog.push(`Savaşta ${dmg} hasar aldın.`);
+        } else {
+            newHp = 1;
+            reportLog.push(`Ağır yaralandın.`);
+        }
+
+        let p = {
             ...prev,
             currentXp: prev.currentXp + xpGain,
             gold: prev.gold + goldGain,
@@ -249,52 +300,86 @@ function App() {
             expeditionPoints: Math.max(0, newPoints),
             nextPointRegenTime: newRegenTime,
             nextExpeditionTime: cooldownEnd,
-            hp: storyOutcome === 'failure' ? 1 : prev.hp
+            hp: newHp,
+            reports: [...prev.reports, {
+                id: Date.now().toString(),
+                title: isBoss ? "Boss Savaşı" : "Sefer Raporu",
+                details: reportLog,
+                rewards: rewardMsg,
+                timestamp: Date.now(),
+                type: 'expedition',
+                outcome: storyOutcome === 'success' ? 'victory' : 'defeat',
+                read: false
+            }]
         };
+        
+        p = checkLevelUp(p);
+        return p;
     });
-
-    if (!isBoss) {
-        // Async story generation
-        const story = await generateExpeditionStory(locationName, storyOutcome, rewardMsg);
-        addLog(story, 'expedition');
-    } else {
-        addLog(rewardMsg, storyOutcome === 'success' ? 'loot' : 'combat');
-    }
-
-    if (droppedItem) addLog(`${droppedItem.name} buldun!`, 'loot');
   };
 
   const handleArenaWin = (gold: number, xp: number) => {
+    // Arena damage (10-20%)
+    const dmg = Math.floor(player.maxHp * (0.1 + Math.random() * 0.1));
+    
     let droppedItem: Item | null = null;
     if (Math.random() > 0.8) {
         droppedItem = generateRandomItem(player.level);
     }
 
-    setPlayer(prev => ({
-        ...prev,
-        gold: prev.gold + gold,
-        currentXp: prev.currentXp + xp,
-        inventory: droppedItem ? [...prev.inventory, droppedItem] : prev.inventory
-    }));
+    setPlayer(prev => {
+        let p = {
+            ...prev,
+            gold: prev.gold + gold,
+            currentXp: prev.currentXp + xp,
+            hp: Math.max(1, prev.hp - dmg),
+            inventory: droppedItem ? [...prev.inventory, droppedItem] : prev.inventory,
+            reports: [...prev.reports, {
+                id: Date.now().toString(),
+                title: "Arena Zaferi",
+                details: ["Rakibini arenada mağlup ettin.", `Kazanılan: ${gold} Altın, ${xp} EXP`, `Alınan Hasar: ${dmg}`],
+                rewards: `${gold} Altın, ${xp} XP` + (droppedItem ? `, ${droppedItem.name}` : ''),
+                timestamp: Date.now(),
+                type: 'arena',
+                outcome: 'victory',
+                read: false
+            }]
+        };
+        p = checkLevelUp(p);
+        return p;
+    });
     setWins(w => w + 1);
-    addLog(`Arena zaferi! ${gold} altın ve ${xp} EXP kazandın.`, 'combat');
-    if (droppedItem) addLog(`Rakibinin üzerinden [${droppedItem.name}] düştü!`, 'loot');
   };
 
   const handleArenaLoss = () => {
-    setPlayer(prev => ({ ...prev, hp: 1 })); 
-    addLog(`Arenada yenildin. Yaralarını sarman gerek.`, 'combat');
+    setPlayer(prev => ({ 
+        ...prev, 
+        hp: 1,
+        reports: [...prev.reports, {
+            id: Date.now().toString(),
+            title: "Arena Yenilgisi",
+            details: ["Rakibine yenildin. Yaralarını sarman gerek."],
+            rewards: "Yok",
+            timestamp: Date.now(),
+            type: 'arena',
+            outcome: 'defeat',
+            read: false
+        }]
+    })); 
   };
 
   const handleEquipItem = (item: Item) => {
-      if (item.type === 'material' || item.type === 'consumable') return;
+      const check = canEquipItem(player, item);
+      if (!check.can) {
+          alert(`Bu eşyayı kuşanamazsın: ${check.reason}`);
+          return;
+      }
+      
       setPlayer(prev => {
           const slot = item.type as keyof Equipment;
           const currentEquipped = prev.equipment[slot];
           const newInventory = prev.inventory.filter(i => i.id !== item.id);
           if (currentEquipped) newInventory.push(currentEquipped);
-
-          addLog(`${item.name} kuşandın.`, 'system');
           return {
               ...prev,
               equipment: { ...prev.equipment, [slot]: item },
@@ -307,7 +392,6 @@ function App() {
       setPlayer(prev => {
           const item = prev.equipment[slot];
           if (!item) return prev;
-          addLog(`${item.name} çıkardın.`, 'system');
           return {
               ...prev,
               equipment: { ...prev.equipment, [slot]: null },
@@ -333,7 +417,6 @@ function App() {
               gold: prev.gold + sellPrice,
               inventory: prev.inventory.filter(i => i.id !== item.id)
            }));
-           addLog(`${item.name} satıldı. +${sellPrice} Altın`, 'market');
       }
   };
 
@@ -342,25 +425,15 @@ function App() {
 
       setPlayer(prev => {
           let newHp = prev.hp;
-          let newInventory = prev.inventory.filter(i => i.id !== item.id); // Consumed
-          let logMsg = "";
-
-          // Potion Logic
+          let newInventory = prev.inventory.filter(i => i.id !== item.id);
+          
           if (item.name.includes("Can İksiri")) {
               newHp = prev.maxHp;
-              logMsg = "Can iksiri içildi. Sağlık yenilendi.";
-          } 
-          // Box Logic
-          else if (item.name.includes("Sandık")) {
+          } else if (item.name.includes("Sandık")) {
               const rarity = item.name.includes("Usta") ? 'rare' : 'common';
               const loot = generateRandomItem(prev.level, rarity === 'rare' ? 'rare' : undefined);
               newInventory.push(loot);
-              logMsg = `Sandık açıldı! İçinden ${loot.name} çıktı.`;
-          } else {
-              logMsg = "Eşya kullanıldı.";
           }
-
-          addLog(logMsg, 'system');
           return { ...prev, hp: newHp, inventory: newInventory };
       });
   };
@@ -391,14 +464,12 @@ function App() {
             gold: prev.gold - cost,
             inventory: updatedInventory.map(i => i.id === item.id ? upgradedItem : i)
         }));
-        addLog(`BAŞARILI! ${item.name} +${upgradedItem.upgradeLevel} oldu!`, 'upgrade');
       } else {
           setPlayer(prev => ({
             ...prev,
             gold: prev.gold - cost,
             inventory: updatedInventory
         }));
-        addLog(`BAŞARISIZ! ${item.name} geliştirilemedi. (Altın harcandı)`, 'upgrade');
       }
   };
 
@@ -412,9 +483,8 @@ function App() {
               ...prev,
               gold: prev.gold - marketItem.price,
               premiumUntil: (prev.premiumUntil > Date.now() ? prev.premiumUntil : Date.now()) + millis,
-              maxExpeditionPoints: 23 // Update max points immediately
+              maxExpeditionPoints: 23 
           }));
-          addLog("PREMIUM Üyelik satın alındı!", 'market');
           return;
       }
 
@@ -434,11 +504,17 @@ function App() {
                   upgradeLevel: 0
               });
           }
-
-          addLog(`${marketItem.name} satın alındı.`, 'market');
           return { ...prev, gold, inventory: newInventory };
       });
   };
+
+  const handleDeleteMessage = (id: string) => {
+      setPlayer(prev => ({...prev, messages: prev.messages.filter(m => m.id !== id)}));
+  }
+
+  const handleDeleteReport = (id: string) => {
+      setPlayer(prev => ({...prev, reports: prev.reports.filter(r => r.id !== id)}));
+  }
 
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-yellow-500 font-cinzel text-xl animate-pulse">Arena Yükleniyor...</div>;
   if (!session) return <LoginScreen onLoginSuccess={() => {}} />;
@@ -452,7 +528,7 @@ function App() {
         users={[player]} 
         onBanUser={() => {}}
         onDeleteUser={() => {}}
-        onEditUser={() => {}}
+        onEditUser={(id, name, gold, role) => setPlayer(p => ({...p, name, gold, role}))}
         onGivePremium={(id, days) => setPlayer(p => ({...p, premiumUntil: Date.now() + (days * 86400000)}))}
         onAddItemToPlayer={(id, item) => setPlayer(p => ({...p, inventory: [...p.inventory, item]}))}
         regions={regions}
@@ -461,6 +537,7 @@ function App() {
         locations={locations}
         onAddLocation={(loc) => setLocations(p => [...p, loc])}
         onDeleteLocation={(id) => setLocations(p => p.filter(l => l.id !== id))}
+        onAddAnnouncement={(ann) => setAnnouncements(prev => [ann, ...prev])}
         currentPlayerId={player.id}
         onAddGold={() => setPlayer(p => ({ ...p, gold: p.gold + 1000 }))}
         onLevelUp={() => setPlayer(p => ({ ...p, currentXp: p.maxXp }))}
@@ -468,6 +545,15 @@ function App() {
       />
 
       <Guide isOpen={showGuide} onClose={() => setShowGuide(false)} />
+      
+      <Mailbox 
+        isOpen={showMailbox} 
+        onClose={() => setShowMailbox(false)}
+        player={player}
+        onDeleteMessage={handleDeleteMessage}
+        onDeleteReport={handleDeleteReport}
+        announcements={announcements}
+      />
 
       {/* Top Bar */}
       <header className="sticky top-0 z-50 bg-slate-900/95 backdrop-blur border-b border-slate-700 h-16 flex items-center justify-between px-4 md:px-8 shadow-lg">
@@ -482,7 +568,16 @@ function App() {
                 <Coins size={16} className="text-yellow-500" />
                 <span className="font-mono font-bold text-yellow-100">{player.gold}</span>
             </div>
+            
+            <button onClick={() => setShowMailbox(true)} className="relative text-slate-400 hover:text-white">
+                <Mail size={24}/>
+                {(player.messages.length > 0 || player.reports.length > 0) && (
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+                )}
+            </button>
+
             <button onClick={() => setShowGuide(true)} className="text-slate-400 hover:text-white"><HelpCircle size={24}/></button>
+            
             <div className="hidden md:flex flex-col items-end mr-2">
                 <span className="text-xs text-slate-400">Gladyatör</span>
                 <span className="font-bold text-sm flex items-center gap-1">
@@ -507,7 +602,6 @@ function App() {
                 { id: 'market', icon: ShoppingBag, label: 'Pazar' },
                 { id: 'blacksmith', icon: Hammer, label: 'Demirci' },
                 { id: 'leaderboard', icon: Trophy, label: 'Sıralama' },
-                { id: 'inventory', icon: Backpack, label: 'Çanta', badge: player.inventory.length }
             ].map(item => (
                 <button 
                     key={item.id}
@@ -515,44 +609,32 @@ function App() {
                     className={`flex items-center gap-3 p-3 rounded-lg transition-all ${currentView === item.id ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-700 text-slate-400'}`}
                 >
                     <item.icon size={20} /> {item.label}
-                    {item.badge && item.badge > 0 && (
-                        <span className="ml-auto bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{item.badge}</span>
-                    )}
                 </button>
             ))}
             
-            <div className="mt-4 pt-4 border-t border-slate-700">
-                 <button onClick={() => setShowAdmin(true)} className="flex items-center gap-3 p-3 rounded-lg text-slate-500 hover:text-white hover:bg-slate-700 w-full">
-                    <Settings size={20} /> Yönetici
-                </button>
-            </div>
-
-            <div className="mt-auto border-t border-slate-700 pt-4">
-                <h3 className="text-xs font-bold text-slate-500 uppercase mb-2 flex items-center gap-2">
-                    <ScrollText size={12} /> Son Olaylar
-                </h3>
-                <div className="text-xs space-y-2 h-40 overflow-y-auto pr-2 custom-scrollbar opacity-70">
-                    {logs.map(log => (
-                        <div key={log.id} className="mb-2">
-                            <span className={`font-bold block mb-0.5 ${
-                                log.type === 'combat' ? 'text-red-400' :
-                                log.type === 'expedition' ? 'text-green-400' : 
-                                log.type === 'loot' ? 'text-yellow-400' : 
-                                log.type === 'market' ? 'text-purple-400' :
-                                log.type === 'upgrade' ? 'text-orange-400' : 'text-blue-400'
-                            }`}>
-                                {log.type === 'combat' ? '⚔️' : log.type === 'expedition' ? '🌲' : log.type === 'loot' ? '🎁' : log.type === 'market' ? '🛒' : log.type === 'upgrade' ? '⚒️' : 'ℹ️'} {log.type.toUpperCase()}
-                            </span>
-                            <span className="text-slate-300 leading-tight">{log.message}</span>
-                        </div>
-                    ))}
+            {/* Admin Button only for Admins/Mods */}
+            {(player.role === 'admin' || player.role === 'moderator') && (
+                <div className="mt-4 pt-4 border-t border-slate-700">
+                     <button onClick={() => setShowAdmin(true)} className="flex items-center gap-3 p-3 rounded-lg text-slate-500 hover:text-white hover:bg-slate-700 w-full">
+                        <Settings size={20} /> Yönetici
+                    </button>
                 </div>
-            </div>
+            )}
         </nav>
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
-            {currentView === 'character' && <CharacterProfile player={player} onUpgradeStat={handleStatUpgrade} onUnequip={handleUnequipItem} />}
+            {currentView === 'character' && (
+                <CharacterProfile 
+                    player={player} 
+                    onUpgradeStat={handleStatUpgrade} 
+                    onEquip={handleEquipItem} 
+                    onUnequip={handleUnequipItem}
+                    onDelete={handleDeleteItem}
+                    onSell={handleSellItem}
+                    onUse={handleUseItem}
+                />
+            )}
             {currentView === 'expedition' && (
                 <Expedition 
                     player={player}
@@ -562,17 +644,18 @@ function App() {
                     isBusy={isBusy} 
                 />
             )}
-            {currentView === 'arena' && <Arena player={player} onWin={handleArenaWin} onLoss={handleArenaLoss} isBusy={isBusy} setBusy={setIsBusy} />}
-            {currentView === 'market' && <Market playerGold={player.gold} onBuy={handleMarketBuy} />}
-            {currentView === 'inventory' && (
-                <Inventory 
-                    items={player.inventory} 
-                    onEquip={handleEquipItem} 
-                    onDelete={handleDeleteItem} 
-                    onSell={handleSellItem}
-                    onUse={handleUseItem}
+            {currentView === 'arena' && (
+                <Arena 
+                    player={player} 
+                    onWin={handleArenaWin} 
+                    onLoss={handleArenaLoss} 
+                    isBusy={isBusy} 
+                    setBusy={setIsBusy} 
+                    // Add logic to check health inside arena start if needed, but App check handles start
                 />
             )}
+            {currentView === 'market' && <Market playerGold={player.gold} onBuy={handleMarketBuy} />}
+            {/* Inventory view removed from nav, integrated into Character */}
             {currentView === 'blacksmith' && <Blacksmith inventory={player.inventory} playerGold={player.gold} onUpgrade={handleUpgradeItem} />}
             {currentView === 'leaderboard' && <Leaderboard />}
         </main>
@@ -580,8 +663,8 @@ function App() {
 
       {/* Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 w-full bg-slate-900 border-t border-slate-800 flex justify-around p-3 z-50 overflow-x-auto">
-         {[User, Map, Swords, ShoppingBag, Hammer, Backpack].map((Icon, idx) => {
-             const views: View[] = ['character', 'expedition', 'arena', 'market', 'blacksmith', 'inventory'];
+         {[User, Map, Swords, ShoppingBag, Hammer, Trophy].map((Icon, idx) => {
+             const views: View[] = ['character', 'expedition', 'arena', 'market', 'blacksmith', 'leaderboard'];
              return (
                 <button key={idx} onClick={() => setCurrentView(views[idx])} className={`flex flex-col items-center gap-1 text-xs min-w-[50px] ${currentView === views[idx] ? 'text-indigo-400' : 'text-slate-500'}`}>
                     <Icon size={20} />
