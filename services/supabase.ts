@@ -180,28 +180,54 @@ export const fetchPvpOpponents = async (minLevel: number, maxLevel: number, curr
     }
 };
 
-export const sendMessage = async (senderName: string, recipientId: string, subject: string, content: string): Promise<boolean> => {
+export const sendMessage = async (senderId: string, senderName: string, recipientId: string, recipientName: string, subject: string, content: string): Promise<boolean> => {
     try {
-        // Create message object
-        const newMessage: Message = {
-            id: Date.now().toString() + Math.random().toString(),
+        const msgId = Date.now().toString() + Math.random().toString();
+        const now = Date.now();
+
+        // 1. Create message for Recipient (Inbox)
+        const inboxMessage: Message = {
+            id: msgId,
+            senderId: senderId,
             sender: senderName,
+            recipientId: recipientId,
+            recipientName: recipientName,
             subject: subject,
             content: content,
-            timestamp: Date.now(),
-            read: false
+            timestamp: now,
+            read: false,
+            type: 'inbox'
         };
 
-        // Use RPC function to bypass RLS for appending messages
-        const { error } = await supabase.rpc('send_message', {
+        // 2. Create message for Sender (Sent Box)
+        const sentMessage: Message = {
+            ...inboxMessage,
+            type: 'sent',
+            read: true
+        };
+
+        // 3. Send to Recipient via RPC
+        const { error: errorInbox } = await supabase.rpc('send_message', {
             recipient_id: recipientId,
-            message_obj: newMessage
+            message_obj: inboxMessage
         });
 
-        if(error) {
-            console.error("RPC Error:", error);
-            throw error;
+        if(errorInbox) {
+            console.error("RPC Error (Inbox):", errorInbox);
+            throw errorInbox;
         }
+
+        // 4. Save to Sender via RPC (Targeting self)
+        const { error: errorSent } = await supabase.rpc('send_message', {
+            recipient_id: senderId, // Sending to self to save in sent box
+            message_obj: sentMessage
+        });
+
+        if(errorSent) {
+             console.error("RPC Error (Sent):", errorSent);
+             // Non-critical if sent box fails, but good to know
+        }
+
         return true;
 
     } catch (e) {

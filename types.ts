@@ -132,11 +132,15 @@ export interface BlacksmithJob {
 
 export interface Message {
     id: string;
+    senderId: string;
     sender: string;
+    recipientId?: string; // Optional for compatibility with old msgs
+    recipientName?: string;
     subject: string;
     content: string;
     timestamp: number;
     read: boolean;
+    type?: 'inbox' | 'sent'; // New field to distinguish
 }
 
 export interface CombatReport {

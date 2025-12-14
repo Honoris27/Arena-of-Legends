@@ -58,7 +58,14 @@ const Leaderboard: React.FC<LeaderboardProps> = ({ currentUser, onAttack }) => {
       }
 
       setMsgError("");
-      const success = await sendMessage(currentUser.name, selectedUser.id, "Özel Mesaj", msgContent);
+      const success = await sendMessage(
+          currentUser.id, 
+          currentUser.name, 
+          selectedUser.id, 
+          selectedUser.name, 
+          "Özel Mesaj", 
+          msgContent
+      );
       
       if (success) {
           setMsgSent(true);
