@@ -1,51 +1,62 @@
 
-import React from 'react';
-import { Player, ArenaBattleState } from '../types';
-import { Swords, Shield, Crown, Medal, Trophy } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Player, ArenaBattleState, Enemy } from '../types';
+import { Swords, Shield, Crown, Medal, Trophy, RefreshCw } from 'lucide-react';
+import { getLeagueInfo } from '../services/gameLogic';
+import { fetchPvpOpponents } from '../services/supabase';
 
 interface PvpArenaProps {
   player: Player;
   isBusy: boolean;
   battleState: ArenaBattleState;
-  onSearch: () => void;
+  onSearch: (enemy: Enemy) => void;
   onStart: () => void;
   onReset: () => void;
 }
 
-const LEAGUES = [
-    { min: 1, max: 5, name: "Bronz Lig" },
-    { min: 6, max: 10, name: "Gümüş Lig" },
-    { min: 11, max: 15, name: "Altın Lig" },
-    { min: 16, max: 20, name: "Platin Lig" },
-    { min: 21, max: 999, name: "Efsanevi Lig" },
-];
-
 const PvpArena: React.FC<PvpArenaProps> = ({ player, isBusy, battleState, onSearch, onStart, onReset }) => {
   const { enemy, logs, isFighting } = battleState;
+  const [opponents, setOpponents] = useState<Enemy[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const currentLeague = LEAGUES.find(l => player.level >= l.min && player.level <= l.max) || LEAGUES[0];
+  const currentLeague = getLeagueInfo(player.level);
+
+  const loadOpponents = async () => {
+      setLoading(true);
+      const opps = await fetchPvpOpponents(currentLeague.minLevel, currentLeague.maxLevel, player.rank || 9999, player.id);
+      setOpponents(opps);
+      setLoading(false);
+  };
+
+  useEffect(() => {
+      if (!enemy) loadOpponents();
+  }, [enemy, player.level, player.rank]);
 
   return (
     <div className="max-w-4xl mx-auto pb-20">
        <div className="text-center mb-6">
         <h2 className="text-3xl cinzel font-bold text-yellow-500 mb-2 drop-shadow-md">PvP Arena</h2>
-        <div className="inline-flex items-center gap-2 bg-slate-800 px-4 py-1 rounded-full border border-yellow-600/50">
-            <Trophy size={16} className="text-yellow-500"/>
-            <span className="text-yellow-500 font-bold text-sm uppercase">{currentLeague.name}</span>
-            <span className="text-slate-500 text-xs">|</span>
-            <span className="text-slate-400 text-xs">Seviye {currentLeague.min}-{currentLeague.max}</span>
+        
+        <div className="flex justify-center items-center gap-2 mb-2">
+            <div className="inline-flex items-center gap-2 bg-slate-800 px-4 py-1 rounded-full border border-yellow-600/50">
+                <Trophy size={16} className="text-yellow-500"/>
+                <span className="text-yellow-500 font-bold text-sm uppercase">{currentLeague.name}</span>
+            </div>
         </div>
+        <p className="text-slate-400 text-xs">Mevcut Sıralaman: <span className="text-white font-bold">#{player.rank || 9999}</span></p>
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center">
-              <div className="text-xs text-slate-500 uppercase font-bold">Onur Puanı</div>
-              <div className="text-xl font-bold text-blue-400">{player.honor}</div>
+              <div className="text-xs text-slate-500 uppercase font-bold">Pasif Gelir</div>
+              <div className="text-xl font-bold text-green-400">+{currentLeague.passiveGold} <span className="text-xs">/10dk</span></div>
+              <div className="text-[10px] text-slate-500">(Sadece Şampiyon)</div>
           </div>
           <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center relative overflow-hidden">
                <div className="absolute top-1 right-1 opacity-20"><Crown size={24} className="text-yellow-500"/></div>
-              <div className="text-xs text-slate-500 uppercase font-bold">Lig Lideri Ödülü</div>
-              <div className="text-xl font-bold text-yellow-500">Aktif</div>
+              <div className="text-xs text-slate-500 uppercase font-bold">Kumbara Bonusu</div>
+              <div className="text-xl font-bold text-yellow-500">%20</div>
+              <div className="text-[10px] text-slate-500">(10dk'da bir)</div>
           </div>
            <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 text-center relative overflow-hidden">
               <div className="text-xs text-slate-500 uppercase font-bold">Benim Kumbaram</div>
@@ -54,35 +65,61 @@ const PvpArena: React.FC<PvpArenaProps> = ({ player, isBusy, battleState, onSear
       </div>
 
       {!enemy ? (
-        <div className="flex flex-col items-center justify-center bg-slate-800/50 border border-slate-700 rounded-xl p-12 min-h-[300px]">
-           <div className="text-center mb-6 max-w-md text-slate-400 text-sm">
-               <p className="mb-2 text-white">Gerçek gladyatörlere karşı yeteneğini kanıtla!</p>
-               <ul className="list-disc list-inside text-slate-300">
-                   <li>Rakibini yenersen üzerindeki altının <strong className="text-yellow-500">%5</strong>'ini çalarsın.</li>
-                   <li><strong className="text-blue-400">+2 Onur</strong> kazanırsın.</li>
-                   <li>Rakip <strong>Lig Lideri</strong> ise kumbarasını patlatırsın!</li>
-                   <li className="text-red-400">Yenilirsen senin paran çalınır! (Kasayı kullan)</li>
-               </ul>
+        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 min-h-[300px]">
+           <div className="flex justify-between items-center mb-4">
+               <h3 className="text-xl font-bold text-white">Sıralama Rakipleri</h3>
+               <button onClick={loadOpponents} disabled={loading} className="text-slate-400 hover:text-white"><RefreshCw size={20} className={loading ? 'animate-spin' : ''}/></button>
            </div>
 
-           <button 
-            onClick={onSearch}
-            disabled={isBusy}
-            className="group relative px-8 py-4 bg-yellow-700 hover:bg-yellow-600 text-white font-bold rounded-lg overflow-hidden transition-all shadow-lg shadow-yellow-900/50"
-           >
-             <div className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
-             <span className="flex items-center gap-3 text-lg">
-                <Swords size={24} />
-                Rakip Gladyatör Ara
-             </span>
-           </button>
+           <div className="space-y-3">
+               {opponents.length === 0 ? (
+                   <div className="text-center py-10 text-slate-500">
+                       Bu ligde senden üst sırada rakip bulunamadı. <br/> Ya lidersin ya da lig boş!
+                   </div>
+               ) : (
+                   opponents.map(opp => (
+                       <div key={opp.id} className="bg-slate-900 border border-slate-700 p-4 rounded-lg flex items-center justify-between hover:border-yellow-600 transition-colors group">
+                           <div className="flex items-center gap-4">
+                               <div className="w-10 h-10 flex items-center justify-center font-bold text-lg text-slate-500 bg-slate-800 rounded-full border border-slate-600">
+                                   #{opp.rank}
+                               </div>
+                               <div className="w-12 h-12 rounded-full overflow-hidden border border-slate-600 bg-black">
+                                   <img src={opp.avatarUrl || "https://api.dicebear.com/7.x/avataaars/svg?seed=X"} className="w-full h-full object-cover"/>
+                               </div>
+                               <div>
+                                   <div className="font-bold text-white flex items-center gap-2">
+                                       {opp.name}
+                                       {opp.rank === 1 && <Crown size={14} className="text-yellow-500 animate-bounce"/>}
+                                   </div>
+                                   <div className="text-xs text-slate-400">Seviye {opp.level}</div>
+                               </div>
+                           </div>
+
+                           <div className="text-right flex flex-col items-end gap-2">
+                               {opp.piggyBank && opp.piggyBank > 0 && (
+                                   <span className="text-xs text-yellow-500 bg-yellow-900/20 px-2 py-1 rounded border border-yellow-500/30">
+                                       Kumbara: {opp.piggyBank}
+                                   </span>
+                               )}
+                               <button 
+                                onClick={() => onSearch(opp)}
+                                disabled={isBusy}
+                                className="bg-red-700 hover:bg-red-600 text-white px-4 py-1.5 rounded font-bold text-sm shadow-lg flex items-center gap-2"
+                               >
+                                   <Swords size={14}/> SAVAŞ
+                               </button>
+                           </div>
+                       </div>
+                   ))
+               )}
+           </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative">
             {/* Player Card */}
             <div className={`bg-slate-800 border-2 ${isFighting ? 'border-blue-500' : 'border-slate-600'} rounded-xl p-6 transition-colors`}>
                 <h3 className="text-xl font-bold text-blue-400 mb-1">{player.name}</h3>
-                <p className="text-xs text-slate-500 mb-4">Sen (Lvl {player.level})</p>
+                <p className="text-xs text-slate-500 mb-4">Sen (Sıra #{player.rank})</p>
                 <div className="h-4 bg-slate-900 rounded-full overflow-hidden border border-slate-700">
                     <div className="h-full bg-blue-600 w-full transition-all duration-300" style={{ width: `${Math.max(0, (player.hp / player.maxHp) * 100)}%` }}></div>
                 </div>
@@ -105,9 +142,9 @@ const PvpArena: React.FC<PvpArenaProps> = ({ player, isBusy, battleState, onSear
                     <div>
                         <h3 className="text-xl font-bold text-red-400 mb-1 flex items-center gap-2">
                             {enemy.name}
-                            {enemy.piggyBank && enemy.piggyBank > 0 && <Crown size={16} className="text-yellow-500 animate-pulse" title="Lig Lideri"/>}
+                            {enemy.rank === 1 && <Crown size={16} className="text-yellow-500 animate-pulse" title="Lig Lideri"/>}
                         </h3>
-                        <p className="text-xs text-slate-500 mb-4">{enemy.description}</p>
+                        <p className="text-xs text-slate-500 mb-4">Sıralama: #{enemy.rank}</p>
                     </div>
                     <Shield className="text-red-800/50 absolute top-4 right-4 w-16 h-16" />
                 </div>

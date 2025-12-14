@@ -185,6 +185,7 @@ export interface Player {
   currentXp: number;
   maxXp: number;
   gold: number;
+  wins: number;
   stats: Stats;
   statPoints: number;
   hp: number;
@@ -200,6 +201,8 @@ export interface Player {
   honor: number;
   victoryPoints: number;
   piggyBank: number; // For League Leader mechanic
+  rank: number; // League Rank (1 is best)
+  lastIncomeTime: number; // Timestamp for 10min passive income
   
   // Resources
   expeditionPoints: number;
@@ -246,6 +249,8 @@ export interface Enemy {
   gold?: number; // For stealing
   isPlayer?: boolean; // Flag to differentiate mobs from players
   piggyBank?: number;
+  rank?: number; // PvP Rank
+  avatarUrl?: string;
 }
 
 export interface Region {
@@ -299,9 +304,17 @@ export interface Toast {
 }
 
 export interface ArenaBattleState {
-    mode: 'pve' | 'pvp'; // Added mode
+    mode: 'pve' | 'pvp'; 
     enemy: Enemy | null;
     logs: string[];
     isFighting: boolean;
     round: number;
+}
+
+export interface LeagueInfo {
+    id: string;
+    name: string;
+    minLevel: number;
+    maxLevel: number;
+    passiveGold: number;
 }

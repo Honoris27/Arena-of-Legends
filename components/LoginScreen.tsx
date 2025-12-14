@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { User, Lock, ArrowRight, Mail, AlertCircle, CheckCircle, Database, Copy, Check, X } from 'lucide-react';
 import { supabase } from '../services/supabase';
@@ -15,7 +14,7 @@ const AVATARS = [
     "https://api.dicebear.com/7.x/avataaars/svg?seed=Naevia"
 ];
 
-const SQL_SETUP_CODE = `-- 1. Profiles Tablosunu Oluştur veya Güncelle
+const SQL_SETUP_CODE = `-- 1. Profiles Tablosunu GÜNCELLE
 create table if not exists public.profiles (
   id uuid references auth.users not null primary key,
   name text,
@@ -23,41 +22,42 @@ create table if not exists public.profiles (
   level int default 1,
   gold int default 50,
   wins int default 0,
-  honor int default 0, -- YENİ: PvP Onur Puanı
-  victory_points int default 0, -- YENİ: Zafer Puanı
-  piggy_bank int default 0, -- YENİ: Lig Lideri Kumbarası
-  data jsonb default '{}'::jsonb, -- Oyun verilerini tutan kolon
+  honor int default 0,
+  victory_points int default 0,
+  piggy_bank int default 0,
+  rank int default 9999,
+  last_income_time bigint default 0,
+  data jsonb default '{}'::jsonb,
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Eski tabloları güncelleme (Zaten varsa hata vermez)
+-- Eksik kolonları ekle (Zaten varsa hata vermez)
 alter table public.profiles add column if not exists honor int default 0;
 alter table public.profiles add column if not exists victory_points int default 0;
 alter table public.profiles add column if not exists piggy_bank int default 0;
+alter table public.profiles add column if not exists rank int default 9999;
+alter table public.profiles add column if not exists last_income_time bigint default 0;
 
 -- 2. Güvenlik Ayarları (RLS)
 alter table public.profiles enable row level security;
 
--- Mevcut politikaları temizle (conflict önlemek için)
+-- Politikaları yenile
 drop policy if exists "Herkes profilleri görebilir." on public.profiles;
 drop policy if exists "Kullanıcı kendi profilini ekleyebilir." on public.profiles;
 drop policy if exists "Kullanıcı kendi profilini güncelleyebilir." on public.profiles;
-drop policy if exists "Herkes herkesi gorebilir" on public.profiles;
 
-create policy "Herkes profilleri görebilir." on public.profiles
-  for select using (true);
+create policy "Herkes profilleri görebilir." on public.profiles for select using (true);
+create policy "Kullanıcı kendi profilini ekleyebilir." on public.profiles for insert with check (auth.uid() = id);
+create policy "Kullanıcı kendi profilini güncelleyebilir." on public.profiles for update using (auth.uid() = id);
 
-create policy "Kullanıcı kendi profilini ekleyebilir." on public.profiles
-  for insert with check (auth.uid() = id);
-
-create policy "Kullanıcı kendi profilini güncelleyebilir." on public.profiles
-  for update using (auth.uid() = id);
-
--- 3. Yeni Üye Fonksiyonu (Otomatik Profil Oluşturma)
+-- 3. Yeni Üye Fonksiyonu (TÜM KOLONLARLA)
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, name, avatar_url, level, gold, wins, honor, victory_points, data)
+  insert into public.profiles (
+    id, name, avatar_url, level, gold, wins, 
+    honor, victory_points, piggy_bank, rank, last_income_time, data
+  )
   values (
     new.id,
     new.raw_user_meta_data->>'full_name',
@@ -65,9 +65,7 @@ begin
     1,
     50,
     0,
-    0,
-    0,
-    -- Varsayılan Oyun Verisi (JSON)
+    0, 0, 0, 9999, 0, -- Varsayılan değerler
     jsonb_build_object(
       'stats', jsonb_build_object('STR', 10, 'AGI', 5, 'VIT', 10, 'INT', 5, 'LUK', 5),
       'statPoints', 0,
@@ -86,7 +84,7 @@ begin
 end;
 $$ language plpgsql security definer;
 
--- 4. Tetikleyiciyi (Trigger) Oluştur
+-- 4. Tetikleyiciyi Yenile
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
@@ -129,14 +127,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
             if (signUpError) throw signUpError;
             
-            // Eğer session yoksa (e-posta onayı gerekiyorsa)
             if (data.user && !data.session) {
                 setLoading(false);
                 setSuccess("Kayıt başarılı! Giriş yapabilmek için lütfen e-postanızı onaylayın.");
                 return;
             }
-            
-            // Auto login handled by App session listener if session exists
         } else {
             const { error: signInError } = await supabase.auth.signInWithPassword({
                 email,
@@ -147,7 +142,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         }
     } catch (err: any) {
         console.error(err);
-        setError(err.message || "Bir hata oluştu.");
+        setError(err.message || "Bir hata oluştu. Veritabanı kurulumunu yaptınız mı?");
         setLoading(false);
     }
   };

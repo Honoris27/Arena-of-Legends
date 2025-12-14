@@ -1,6 +1,6 @@
 
 
-import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus, GameEvent, MarketItem, GlobalConfig } from '../types';
+import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus, GameEvent, MarketItem, GlobalConfig, LeagueInfo } from '../types';
 
 export const isPremium = (player: Player): boolean => {
     return player.premiumUntil > Date.now();
@@ -20,6 +20,29 @@ export const checkEventStatus = (event: GameEvent | null): GameEvent | null => {
     }
     
     return event;
+};
+
+// --- LEAGUE LOGIC ---
+export const getLeagueInfo = (level: number): LeagueInfo => {
+    // 1-9, 10-19, 20-39, 40-59, 60-79, 80-99, 100-119...
+    if (level < 10) return { id: 'l1', name: "1-9 Seviye Ligi", minLevel: 1, maxLevel: 9, passiveGold: 10 };
+    if (level < 20) return { id: 'l2', name: "10-19 Seviye Ligi", minLevel: 10, maxLevel: 19, passiveGold: 20 };
+    
+    // Pattern: 20 levels per league after lvl 20
+    const tier = Math.floor((level - 20) / 20); 
+    const min = 20 + (tier * 20);
+    const max = min + 19;
+    
+    // Gold scales with tier
+    const gold = 50 + (tier * 50);
+
+    return {
+        id: `l${tier + 3}`,
+        name: `${min}-${max} Seviye Ligi`,
+        minLevel: min,
+        maxLevel: max,
+        passiveGold: gold
+    };
 };
 
 export const getExpeditionConfig = (player: Player, activeEvent?: GameEvent | null) => {

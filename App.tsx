@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Player, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, Toast, BlacksmithJob, ItemRarity, ItemType, GameEvent, GlobalConfig, CombatReport, ArenaBattleState, Enemy } from './types';
-import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus, INITIAL_MARKET_ITEMS, DEFAULT_GLOBAL_CONFIG, formatTime, generateEnemy, calculateDamage, getPlayerTotalStats } from './services/gameLogic';
+import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus, INITIAL_MARKET_ITEMS, DEFAULT_GLOBAL_CONFIG, formatTime, generateEnemy, calculateDamage, getPlayerTotalStats, getLeagueInfo } from './services/gameLogic';
 import { supabase, savePlayerProfile, loadPlayerProfile, updateProfile } from './services/supabase';
 import { generateExpeditionStory, generateEnemyNameAndDescription } from './services/geminiService';
 import CharacterProfile from './components/CharacterProfile';
@@ -42,6 +42,7 @@ const DEFAULT_PLAYER_TEMPLATE: Player = {
   currentXp: 0,
   maxXp: 100,
   gold: 50,
+  wins: 0,
   stats: { STR: 10, AGI: 5, VIT: 10, INT: 5, LUK: 5 },
   statPoints: 0,
   hp: 120, maxHp: 120, mp: 50, maxMp: 50,
@@ -57,6 +58,8 @@ const DEFAULT_PLAYER_TEMPLATE: Player = {
   honor: 0,
   victoryPoints: 0,
   piggyBank: 0,
+  rank: 9999,
+  lastIncomeTime: 0,
   bankDeposits: [],
   messages: [],
   reports: [],
@@ -140,6 +143,7 @@ function App() {
               const parsed = JSON.parse(localData);
               if (parsed && parsed.id === user.id) {
                   setPlayer(prev => ({ ...DEFAULT_PLAYER_TEMPLATE, ...parsed }));
+                  if (parsed.wins) setWins(parsed.wins);
                   loadedFromLocal = true;
                   setLoading(false);
               }
@@ -155,6 +159,7 @@ function App() {
               equipment: { ...DEFAULT_PLAYER_TEMPLATE.equipment, ...profile.equipment }
           };
           setPlayer(merged);
+          setWins(merged.wins || 0);
           localStorage.setItem(localKey, JSON.stringify(merged));
       } else if (!loadedFromLocal) {
           const meta = user.user_metadata;
@@ -210,9 +215,18 @@ function App() {
             // 2. HP Regen (Every 5 seconds)
             if (hpRegenTick.current % 5 === 0 && updated.hp < updated.maxHp && !arenaBattle.isFighting) {
                 const totalStats = getPlayerTotalStats(prev);
-                // HP regen based on INT: Max(1, INT / 10) per 5 sec
                 const regenAmount = Math.max(1, Math.floor(totalStats.INT / 10));
                 updated.hp = Math.min(updated.maxHp, updated.hp + regenAmount);
+                changed = true;
+            }
+
+            // 3. Passive Income (Rank 1) Check
+            if (prev.rank === 1 && (now - (prev.lastIncomeTime || 0) > 10 * 60 * 1000)) {
+                const league = getLeagueInfo(prev.level);
+                updated.gold += league.passiveGold;
+                updated.piggyBank += Math.floor(league.passiveGold * 0.2); // 20% accumulation
+                updated.lastIncomeTime = now;
+                addToast(`Şampiyon Maaşı: ${league.passiveGold} Altın`, 'loot');
                 changed = true;
             }
             
@@ -249,19 +263,34 @@ function App() {
               let honorReward = 0;
               let vpReward = 0;
               let extraMsg = "";
+              let newRank = player.rank;
 
               if (arenaBattle.mode === 'pvp') {
-                  // PvP Rewards: Steal 5%, Honor, Piggy Bank
+                  // PvP Rewards
                   const stealAmount = newEnemy.gold ? Math.floor(newEnemy.gold * 0.05) : 0;
-                  const piggySteal = newEnemy.piggyBank || 0;
+                  // Piggy Bank is only claimed if opponent was Rank 1
+                  const piggySteal = (newEnemy.rank === 1 && newEnemy.piggyBank) ? newEnemy.piggyBank : 0;
+                  
                   goldReward = stealAmount + piggySteal;
                   xpReward = (newEnemy.level * 30);
-                  honorReward = 2; // Fixed honor for win
+                  honorReward = 2; 
                   
                   if(stealAmount > 0) extraMsg += ` ${stealAmount} Altın çaldın!`;
-                  if(piggySteal > 0) extraMsg += ` LİDER KUMBARASINI PATLATTIN! (+${piggySteal})`;
+                  if(piggySteal > 0) extraMsg += ` ŞAMPİYON KUMBARASI! (+${piggySteal})`;
+
+                  // Rank Swap Logic (Optimistic UI Update + DB Call)
+                  if(newEnemy.rank && newEnemy.rank < player.rank) {
+                      newRank = newEnemy.rank;
+                      extraMsg += ` Sıralaman Yükseldi: #${newRank}`;
+                      // Update Opponent in DB (Swap)
+                      updateProfile(newEnemy.id!, { 
+                          rank: player.rank, // Opponent gets bad rank
+                          gold: Math.max(0, (newEnemy.gold || 0) - stealAmount),
+                          piggyBank: 0 // Reset their piggy bank if they were leader
+                      });
+                  }
               } else {
-                  // PvE Rewards: Gold, XP, Victory Point
+                  // PvE Rewards
                   goldReward = (newEnemy.level * 10) + Math.floor(Math.random() * 20);
                   xpReward = (newEnemy.level * 20) + Math.floor(Math.random() * 10);
                   vpReward = 1;
@@ -273,8 +302,11 @@ function App() {
                   gold: prev.gold + goldReward,
                   currentXp: prev.currentXp + xpReward,
                   honor: prev.honor + honorReward,
-                  victoryPoints: prev.victoryPoints + vpReward
+                  victoryPoints: prev.victoryPoints + vpReward,
+                  rank: newRank,
+                  piggyBank: newRank === 1 ? 0 : prev.piggyBank // Start accumulating if new champion
               }));
+              
               setWins(w => w + 1);
               addToast(`Zafer! +${goldReward} Altın, +${xpReward} XP` + extraMsg, 'success');
               if(honorReward > 0) addToast(`+${honorReward} Onur`, 'info');
@@ -335,23 +367,12 @@ function App() {
     });
   };
 
-  // PvP Search
-  const handlePvpSearch = async () => {
+  // PvP Search (Triggered from List Selection)
+  const handlePvpStart = async (selectedEnemy: Enemy) => {
     if (isBusy) return;
-    // Simulate finding a player (for now using generator but marking as player)
-    // Mock gold to steal based on level
-    const baseEnemy = generateEnemy(player.level);
-    baseEnemy.isPlayer = true;
-    baseEnemy.gold = Math.floor(Math.random() * 1000) + 200 * player.level; 
-    
-    // 5% chance to find a "Rank 1" with piggy bank
-    if(Math.random() < 0.05) baseEnemy.piggyBank = Math.floor(Math.random() * 5000) + 500;
-
-    const flavor = await generateEnemyNameAndDescription(baseEnemy.level);
-    
     setArenaBattle({
         mode: 'pvp',
-        enemy: { ...baseEnemy, name: `Gladyatör ${flavor.name.split(' ')[0]}`, description: "Rakip bir oyuncu.", isPlayer: true },
+        enemy: selectedEnemy,
         logs: [],
         isFighting: false,
         round: 0
@@ -765,7 +786,7 @@ function App() {
                     player={player}
                     isBusy={isBusy}
                     battleState={arenaBattle}
-                    onSearch={handlePvpSearch}
+                    onSearch={handlePvpStart}
                     onStart={handleArenaStart}
                     onReset={handleArenaReset}
                 />
