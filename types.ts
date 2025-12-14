@@ -304,7 +304,7 @@ export interface MarketItem {
 export interface Toast {
     id: string;
     message: string;
-    type: 'success' | 'error' | 'info' | 'loot';
+    type: 'success' | 'error' | 'info' | 'loot' | 'levelup';
     duration?: number;
 }
 

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Player, ArenaBattleState, Enemy } from '../types';
 import { Swords, Shield, Crown, Medal, Trophy, RefreshCw } from 'lucide-react';
@@ -14,11 +15,14 @@ interface PvpArenaProps {
 }
 
 const PvpArena: React.FC<PvpArenaProps> = ({ player, isBusy, battleState, onSearch, onStart, onReset }) => {
-  const { enemy, logs, isFighting } = battleState;
+  const { enemy, logs, isFighting, mode } = battleState;
   const [opponents, setOpponents] = useState<Enemy[]>([]);
   const [loading, setLoading] = useState(false);
 
   const currentLeague = getLeagueInfo(player.level);
+
+  // Only show combat if we have an enemy AND we are in PVP mode
+  const showCombat = enemy && mode === 'pvp';
 
   const loadOpponents = async () => {
       setLoading(true);
@@ -28,8 +32,9 @@ const PvpArena: React.FC<PvpArenaProps> = ({ player, isBusy, battleState, onSear
   };
 
   useEffect(() => {
-      if (!enemy) loadOpponents();
-  }, [enemy, player.level, player.rank]);
+      // Only reload opponents if we are not in combat view
+      if (!showCombat) loadOpponents();
+  }, [showCombat, player.level, player.rank]);
 
   return (
     <div className="max-w-4xl mx-auto pb-20">
@@ -63,7 +68,7 @@ const PvpArena: React.FC<PvpArenaProps> = ({ player, isBusy, battleState, onSear
           </div>
       </div>
 
-      {!enemy ? (
+      {!showCombat ? (
         <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 min-h-[300px]">
            <div className="flex justify-between items-center mb-4">
                <h3 className="text-xl font-bold text-white">Sıralama Rakipleri</h3>
@@ -140,38 +145,38 @@ const PvpArena: React.FC<PvpArenaProps> = ({ player, isBusy, battleState, onSear
                 <div className="flex justify-between items-start">
                     <div>
                         <h3 className="text-xl font-bold text-red-400 mb-1 flex items-center gap-2">
-                            {enemy.name}
-                            {enemy.rank === 1 && (
+                            {enemy!.name}
+                            {enemy!.rank === 1 && (
                                 <span title="Lig Lideri">
                                     <Crown size={16} className="text-yellow-500 animate-pulse"/>
                                 </span>
                             )}
                         </h3>
-                        <p className="text-xs text-slate-500 mb-4">Sıralama: #{enemy.rank}</p>
+                        <p className="text-xs text-slate-500 mb-4">Sıralama: #{enemy!.rank}</p>
                     </div>
                     <Shield className="text-red-800/50 absolute top-4 right-4 w-16 h-16" />
                 </div>
                 
                 <div className="h-4 bg-slate-900 rounded-full overflow-hidden border border-slate-700">
-                    <div className="h-full bg-red-600 w-full transition-all duration-300" style={{ width: `${Math.max(0, (enemy.hp / enemy.maxHp) * 100)}%` }}></div>
+                    <div className="h-full bg-red-600 w-full transition-all duration-300" style={{ width: `${Math.max(0, (enemy!.hp / enemy!.maxHp) * 100)}%` }}></div>
                 </div>
-                <div className="mt-1 text-center text-xs font-bold text-white">{enemy.hp} / {enemy.maxHp} HP</div>
+                <div className="mt-1 text-center text-xs font-bold text-white">{enemy!.hp} / {enemy!.maxHp} HP</div>
 
                 <div className="mt-4 grid grid-cols-2 gap-2 text-sm text-slate-300">
-                    <div>Lv: {enemy.level}</div>
-                    <div>Güç: {enemy.stats.STR}</div>
+                    <div>Lv: {enemy!.level}</div>
+                    <div>Güç: {enemy!.stats.STR}</div>
                 </div>
 
                 <div className="mt-4 flex gap-2">
-                    {enemy.piggyBank && enemy.piggyBank > 0 ? (
+                    {enemy!.piggyBank && enemy!.piggyBank > 0 ? (
                         <div className="flex-1 bg-yellow-900/30 border border-yellow-500/30 rounded p-2 text-center">
                             <div className="text-xs text-yellow-500 uppercase font-bold mb-1">Kumbara</div>
-                            <div className="font-mono text-white">{enemy.piggyBank} Altın</div>
+                            <div className="font-mono text-white">{enemy!.piggyBank} Altın</div>
                         </div>
                     ) : (
                         <div className="flex-1 bg-slate-900/50 border border-slate-700 rounded p-2 text-center">
                             <div className="text-xs text-slate-500 uppercase font-bold mb-1">Çalınabilir</div>
-                            <div className="font-mono text-white">~{Math.floor((enemy.gold || 0) * 0.05)} Altın</div>
+                            <div className="font-mono text-white">~{Math.floor((enemy!.gold || 0) * 0.05)} Altın</div>
                         </div>
                     )}
                 </div>

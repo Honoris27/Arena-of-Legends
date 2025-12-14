@@ -1,7 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
-import { X, PlusCircle, Trash2, Edit, Save, Map, Gift, Megaphone, Skull, Users, Package, Database, Hammer, Eye, Check, RefreshCw, Zap, Clock, Coins, FileText, Ban, ShoppingBag, Settings } from 'lucide-react';
+import { X, PlusCircle, Trash2, Edit, Save, Map, Gift, Megaphone, Skull, Users, Package, Database, Hammer, Eye, Check, RefreshCw, Zap, Clock, Coins, FileText, Ban, ShoppingBag, Settings, Shield } from 'lucide-react';
 import { Player, Item, ExpeditionLocation, Region, ItemType, Role, Announcement, StatType, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, ModifierBonus, BonusType, GameMode, GameEvent, ItemRarity, MarketItem, GlobalConfig } from '../types';
 import { generateDynamicItem, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS } from '../services/gameLogic';
+import { saveSystemData } from '../services/supabase';
 import ItemTooltip from './ItemTooltip';
 
 interface AdminPanelProps {
@@ -113,8 +115,15 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // --- WORLD STATE ---
   const [newRegionName, setNewRegionName] = useState('');
+  const [newRegionLevel, setNewRegionLevel] = useState(1);
+  const [newRegionDesc, setNewRegionDesc] = useState('');
+  
   const [newLocName, setNewLocName] = useState('');
   const [newLocRegion, setNewLocRegion] = useState('');
+  const [newLocLevel, setNewLocLevel] = useState(1);
+  const [newLocDuration, setNewLocDuration] = useState(1);
+  const [newLocRisk, setNewLocRisk] = useState('Düşük');
+  const [newLocReward, setNewLocReward] = useState(1.0);
 
   // --- EVENT STATE ---
   const [newEventTitle, setNewEventTitle] = useState("Haftasonu Çılgınlığı");
@@ -171,6 +180,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           baseStats: { [newBaseStat]: newBaseVal }
       };
       setBaseItems([...baseItems, newItem]);
+      saveSystemData('item', newItem); // Save to DB
       alert(`${newBaseName} veritabanına eklendi!`);
       setNewBaseName("");
   };
@@ -178,6 +188,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   const deleteBaseItem = (id: string) => {
       if(confirm('Silmek istediğine emin misin?')) {
           setBaseItems(baseItems.filter(i => i.id !== id));
+          saveSystemData('delete_item', id); // Delete from DB
       }
   };
 
@@ -193,11 +204,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           icon: newMarketIcon
       };
       setMarketItems([...marketItems, newItem]);
+      saveSystemData('market', newItem); // Save to DB
       setNewMarketName("");
   };
 
   const handleDeleteMarketItem = (id: string) => {
       setMarketItems(marketItems.filter(m => m.id !== id));
+      saveSystemData('delete_market', id); // Delete from DB
   };
 
   // --- MODIFIER HANDLERS ---
@@ -247,12 +260,14 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       } else {
           setModifiers([...modifiers, newMod]);
       }
+      saveSystemData('modifier', newMod); // Save to DB
       setModEditorOpen(false);
   };
 
   const deleteModifier = (id: string) => {
       if(confirm("Bu özelliği silmek istediğine emin misin?")) {
           setModifiers(modifiers.filter(m => m.id !== id));
+          saveSystemData('delete_modifier', id); // Delete from DB
       }
   };
 
@@ -267,21 +282,28 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   // --- WORLD LOGIC ---
   const handleAddRegion = () => {
       if(!newRegionName) return;
-      onAddRegion({ id: Date.now().toString(), name: newRegionName, minLevel: 1, description: 'Yeni Bölge' });
+      onAddRegion({ 
+          id: 'r' + Date.now().toString(), 
+          name: newRegionName, 
+          minLevel: newRegionLevel, 
+          description: newRegionDesc 
+      });
       setNewRegionName('');
+      setNewRegionDesc('');
+      setNewRegionLevel(1);
   }
   const handleAddLoc = () => {
       if(!newLocName || !newLocRegion) return;
       onAddLocation({ 
-          id: Date.now().toString(), 
+          id: 'l' + Date.now().toString(), 
           regionId: newLocRegion, 
           name: newLocName, 
-          minLevel: 1, 
-          duration: 2, 
+          minLevel: newLocLevel, 
+          duration: newLocDuration, 
           desc: 'Yeni Alan', 
-          risk: 'Orta', 
-          rewardRate: 1.5,
-          difficultyScore: 2 // Added default difficulty score
+          risk: newLocRisk, 
+          rewardRate: newLocReward,
+          difficultyScore: Math.ceil(newLocReward * 2) 
       });
       setNewLocName('');
   }
@@ -305,6 +327,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
           salvageYieldMultiplier: evtSalvage
       };
       onUpdateEvent(evt);
+      saveSystemData('event', evt); // Save to DB
 
       // Auto Announce
       let durStr = "süresiz";
@@ -325,6 +348,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const stopEvent = () => {
       onUpdateEvent(null);
+      saveSystemData('event', null); // Clears active event in DB logic
   };
 
   // --- USER HANDLERS ---
@@ -343,6 +367,13 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
       }
       setGiftModalUser(null);
       alert("Hediye gönderildi.");
+  };
+
+  const handleChangeRole = (u: Player) => {
+      const newRole = u.role === 'admin' ? 'player' : 'admin';
+      if(confirm(`${u.name} kullanıcısını ${newRole === 'admin' ? 'YÖNETİCİ (Admin)' : 'OYUNCU'} yapmak istediğine emin misin?`)) {
+          onEditUser(u.id, { role: newRole });
+      }
   };
 
   return (
@@ -399,11 +430,12 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                                         <td className="p-3 flex items-center gap-2"><img src={u.avatarUrl} className="w-6 h-6 rounded-full"/> {u.name}</td>
                                         <td className="p-3">{u.level}</td>
                                         <td className="p-3 text-yellow-500">{u.gold}</td>
-                                        <td className="p-3"><span className="bg-slate-900 px-2 py-1 rounded text-xs uppercase">{u.role}</span></td>
+                                        <td className="p-3"><span className={`bg-slate-900 px-2 py-1 rounded text-xs uppercase ${u.role === 'admin' ? 'text-red-400 font-bold' : 'text-slate-400'}`}>{u.role}</span></td>
                                         <td className="p-3 text-right flex justify-end gap-2">
                                             {/* Admin Only Actions */}
                                             {currentUserRole === 'admin' && (
                                                 <>
+                                                    <button onClick={() => handleChangeRole(u)} className="p-1.5 bg-indigo-900/50 text-indigo-400 rounded hover:bg-indigo-800" title="Rol Değiştir"><Shield size={16}/></button>
                                                     <button onClick={() => setGiftModalUser(u)} className="p-1.5 bg-green-900/50 text-green-400 rounded hover:bg-green-800" title="Hediye Ver"><Gift size={16}/></button>
                                                     <button onClick={() => {
                                                         const name = prompt("Yeni İsim:", u.name);
@@ -446,6 +478,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
                     </div>
                 )}
 
+                {/* REST OF TABS ... (Unchanged logic, just ensure wrapper handles them) */}
                 {/* ITEMS TAB */}
                 {activeTab === 'items' && currentUserRole === 'admin' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -669,35 +702,91 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
 
                 {/* WORLD MANAGER */}
                 {activeTab === 'world' && currentUserRole === 'admin' && (
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                             <h3 className="font-bold text-white mb-2">Sefer Bölgeleri</h3>
-                             {regions.map(r => (
-                                 <div key={r.id} className="p-2 border-b border-slate-700 text-sm flex justify-between">
-                                     <span>{r.name} (Lvl {r.minLevel})</span>
-                                     <span className="text-slate-500">{r.id}</span>
-                                 </div>
-                             ))}
-                             <div className="mt-2 flex gap-2">
-                                <input placeholder="Bölge Adı" value={newRegionName} onChange={e => setNewRegionName(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-1 text-xs text-white"/>
-                                <button onClick={handleAddRegion} className="text-xs bg-green-600 text-white px-2 py-1 rounded">Ekle</button>
+                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full overflow-hidden">
+                         
+                         {/* Regions Column */}
+                         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col h-full">
+                             <h3 className="font-bold text-white mb-2 flex items-center gap-2"><Map size={18}/> Sefer Bölgeleri</h3>
+                             
+                             <div className="flex-1 overflow-y-auto space-y-2 mb-4 pr-1">
+                                 {regions.map(r => (
+                                     <div key={r.id} className="p-3 bg-slate-900 rounded border border-slate-700">
+                                         <div className="flex justify-between items-center">
+                                             <span className="font-bold text-sm text-white">{r.name}</span>
+                                             <span className="text-xs text-slate-500 bg-slate-800 px-2 py-1 rounded">Lvl {r.minLevel}+</span>
+                                         </div>
+                                         <p className="text-xs text-slate-400 mt-1">{r.description}</p>
+                                     </div>
+                                 ))}
+                             </div>
+
+                             <div className="border-t border-slate-700 pt-4 space-y-2">
+                                <h4 className="text-xs font-bold text-slate-400 uppercase">Yeni Bölge Ekle</h4>
+                                <input placeholder="Bölge Adı" value={newRegionName} onChange={e => setNewRegionName(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white"/>
+                                <textarea placeholder="Açıklama" value={newRegionDesc} onChange={e => setNewRegionDesc(e.target.value)} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white resize-none h-16"/>
+                                <div className="flex gap-2 items-center">
+                                    <span className="text-xs text-slate-400">Min Level:</span>
+                                    <input type="number" value={newRegionLevel} onChange={e => setNewRegionLevel(Number(e.target.value))} className="w-16 bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white"/>
+                                    <button onClick={handleAddRegion} className="flex-1 bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded text-sm">Bölgeyi Ekle</button>
+                                </div>
                              </div>
                          </div>
-                         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                             <h3 className="font-bold text-white mb-2">Lokasyonlar</h3>
-                             {locations.map(l => (
-                                 <div key={l.id} className="p-2 border-b border-slate-700 text-sm flex justify-between items-center">
-                                     <span>{l.name} - {l.risk}</span>
-                                     <button onClick={() => onDeleteLocation(l.id)} className="text-red-500"><Trash2 size={12}/></button>
-                                 </div>
-                             ))}
-                             <div className="mt-2 flex gap-2">
-                                <select value={newLocRegion} onChange={e => setNewLocRegion(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-1 text-xs text-white">
-                                    <option value="">Bölge Seç</option>
-                                    {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                                </select>
-                                <input placeholder="Alan Adı" value={newLocName} onChange={e => setNewLocName(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-1 text-xs text-white"/>
-                                <button onClick={handleAddLoc} className="text-xs bg-green-600 text-white px-2 py-1 rounded">Ekle</button>
+
+                         {/* Locations Column */}
+                         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col h-full">
+                             <h3 className="font-bold text-white mb-2 flex items-center gap-2"><Map size={18}/> Lokasyonlar</h3>
+                             
+                             <div className="flex-1 overflow-y-auto space-y-2 mb-4 pr-1">
+                                 {locations.map(l => {
+                                     const parentRegion = regions.find(r => r.id === l.regionId);
+                                     return (
+                                         <div key={l.id} className="p-3 bg-slate-900 rounded border border-slate-700 group relative">
+                                             <div className="absolute top-2 right-2 hidden group-hover:block">
+                                                 <button onClick={() => onDeleteLocation(l.id)} className="text-red-500 hover:text-red-400"><Trash2 size={14}/></button>
+                                             </div>
+                                             <div className="flex justify-between items-center mb-1">
+                                                 <span className="font-bold text-sm text-white">{l.name}</span>
+                                                 <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${l.risk === 'Yüksek' ? 'bg-red-900 text-red-300' : l.risk === 'Orta' ? 'bg-yellow-900 text-yellow-300' : 'bg-green-900 text-green-300'}`}>{l.risk} Risk</span>
+                                             </div>
+                                             <div className="text-xs text-slate-500 flex gap-2">
+                                                 <span>{parentRegion?.name}</span> • <span>Lvl {l.minLevel}</span> • <span>{l.duration}dk</span> • <span className="text-green-400">x{l.rewardRate} Ödül</span>
+                                             </div>
+                                         </div>
+                                     );
+                                 })}
+                             </div>
+
+                             <div className="border-t border-slate-700 pt-4 space-y-2">
+                                <h4 className="text-xs font-bold text-slate-400 uppercase">Yeni Lokasyon Ekle</h4>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <select value={newLocRegion} onChange={e => setNewLocRegion(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white w-full col-span-2">
+                                        <option value="">Bölge Seç...</option>
+                                        {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                                    </select>
+                                    <input placeholder="Alan Adı" value={newLocName} onChange={e => setNewLocName(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white col-span-2"/>
+                                    
+                                    <div className="flex flex-col">
+                                        <label className="text-[10px] text-slate-500">Min Level</label>
+                                        <input type="number" value={newLocLevel} onChange={e => setNewLocLevel(Number(e.target.value))} className="bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white"/>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <label className="text-[10px] text-slate-500">Süre (dk)</label>
+                                        <input type="number" value={newLocDuration} onChange={e => setNewLocDuration(Number(e.target.value))} className="bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white"/>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <label className="text-[10px] text-slate-500">Risk</label>
+                                        <select value={newLocRisk} onChange={e => setNewLocRisk(e.target.value)} className="bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white">
+                                            <option value="Düşük">Düşük</option>
+                                            <option value="Orta">Orta</option>
+                                            <option value="Yüksek">Yüksek</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <label className="text-[10px] text-slate-500">Ödül Çarpanı</label>
+                                        <input type="number" step="0.1" value={newLocReward} onChange={e => setNewLocReward(Number(e.target.value))} className="bg-slate-900 border border-slate-600 rounded p-2 text-sm text-white"/>
+                                    </div>
+                                </div>
+                                <button onClick={handleAddLoc} className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-2 rounded text-sm mt-2">Lokasyonu Ekle</button>
                              </div>
                          </div>
                      </div>

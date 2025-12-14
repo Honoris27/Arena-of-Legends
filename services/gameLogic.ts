@@ -1,5 +1,4 @@
 
-
 import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus, GameEvent, MarketItem, GlobalConfig, LeagueInfo } from '../types';
 
 export const isPremium = (player: Player): boolean => {
@@ -69,7 +68,9 @@ export const formatTime = (ms: number): string => {
 };
 
 export const calculateMaxXp = (level: number): number => {
-  return Math.floor(100 * Math.pow(1.5, level - 1));
+  // Linear-Exponential curve: Harder at first, then scales reasonable
+  // Base 100. Lvl 2: 150. Lvl 3: 225...
+  return Math.floor(100 * Math.pow(1.2, level - 1) + (level * 50));
 };
 
 export const calculateMaxHp = (vit: number, level: number): number => {
@@ -104,6 +105,24 @@ export const getPlayerTotalStats = (player: Player): Stats => {
   return totalStats;
 };
 
+// NEW: Helper to get stat description for tooltips
+export const getStatDescription = (stat: StatType, value: number, level: number): string => {
+    switch (stat) {
+        case 'STR':
+            return `Fiziksel Hasar: ~${Math.floor(value * 1.5)}`;
+        case 'AGI':
+            return `Kritik Şansı: %${(value * 0.05).toFixed(2)}`; // Simplified
+        case 'VIT':
+            return `Can (HP): +${value * 10}\nDefans: +${Math.floor(value * 0.5)}`;
+        case 'INT':
+            return `Mana (MP): +${value * 5}\nHP Yenileme: +${Math.max(1, Math.floor(value / 10))}/5sn`;
+        case 'LUK':
+            return `Eşya Düşürme & Kritik Şans Bonusu`;
+        default:
+            return '';
+    }
+};
+
 export const canEquipItem = (player: Player, item: Item): { can: boolean, reason?: string } => {
     if (item.reqLevel && player.level < item.reqLevel) {
         return { can: false, reason: `Gereken Seviye: ${item.reqLevel}` };
@@ -125,9 +144,31 @@ export const calculateDamage = (attackerStats: Stats, defenderStats: Stats): num
   return Math.floor(damage);
 };
 
+// --- LEVEL UP LOGIC ---
+export const processLevelUp = (player: Player): { updatedPlayer: Player, leveledUp: boolean, levelsGained: number } => {
+    let p = { ...player };
+    let levelsGained = 0;
+    
+    // Check if player has enough XP for next level, loop for multiple levels
+    while (p.currentXp >= p.maxXp) {
+        p.currentXp -= p.maxXp;
+        p.level += 1;
+        p.maxXp = calculateMaxXp(p.level);
+        p.statPoints += 5; // Give 5 stat points per level
+        p.maxHp = calculateMaxHp(p.stats.VIT, p.level); // Update Max HP
+        p.maxMp = calculateMaxMp(p.stats.INT, p.level); // Update Max MP
+        p.hp = p.maxHp; // Full heal on level up
+        p.mp = p.maxMp;
+        levelsGained++;
+    }
+
+    return { updatedPlayer: p, leveledUp: levelsGained > 0, levelsGained };
+};
+
 // PVE MONSTER GENERATOR
 export const generateEnemy = (playerLevel: number, isBoss: boolean = false): Enemy => {
   const levelVariation = isBoss ? 5 : Math.floor(Math.random() * 3) - 1; 
+  // Allow difficulty scaling via parameter indirectly if playerLevel is boosted before calling
   const level = Math.max(1, playerLevel + levelVariation);
   
   const multiplier = isBoss ? 5 : 3;
@@ -143,8 +184,8 @@ export const generateEnemy = (playerLevel: number, isBoss: boolean = false): Ene
 
   const maxHp = calculateMaxHp(stats.VIT, level) * (isBoss ? 3 : 1);
 
-  const monsterNames = ["Vahşi Goblin", "Karanlık Ork", "Zindan İskeleti", "Mağara Örümceği", "Kayıp Ruh", "Taş Golem", "Kuduz Kurt", "Hırsız Kobold"];
-  const bossNames = ["MAĞARA EJDERHASI", "KRAL ORK", "ÖLÜMSÜZ LICH", "DEV GOLEM"];
+  const monsterNames = ["Vahşi Goblin", "Karanlık Ork", "Zindan İskeleti", "Mağara Örümceği", "Kayıp Ruh", "Taş Golem", "Kuduz Kurt", "Hırsız Kobold", "Mezar Bekçisi", "Kanlı Yarasa"];
+  const bossNames = ["MAĞARA EJDERHASI", "KRAL ORK", "ÖLÜMSÜZ LICH", "DEV GOLEM", "KARANLIK LORD"];
 
   return {
     name: isBoss ? bossNames[Math.floor(Math.random() * bossNames.length)] : monsterNames[Math.floor(Math.random() * monsterNames.length)],

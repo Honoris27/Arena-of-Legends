@@ -1,9 +1,8 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Player, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, Toast, BlacksmithJob, ItemRarity, ItemType, GameEvent, GlobalConfig, CombatReport, ArenaBattleState, Enemy } from './types';
-import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus, INITIAL_MARKET_ITEMS, DEFAULT_GLOBAL_CONFIG, formatTime, generateEnemy, calculateDamage, getPlayerTotalStats, getLeagueInfo } from './services/gameLogic';
-import { supabase, savePlayerProfile, loadPlayerProfile, updateProfile } from './services/supabase';
+import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus, INITIAL_MARKET_ITEMS, DEFAULT_GLOBAL_CONFIG, formatTime, generateEnemy, calculateDamage, getPlayerTotalStats, getLeagueInfo, processLevelUp } from './services/gameLogic';
+import { supabase, savePlayerProfile, loadPlayerProfile, updateProfile, fetchGameSystemData, saveSystemData } from './services/supabase';
 import { generateExpeditionStory, generateEnemyNameAndDescription } from './services/geminiService';
 import CharacterProfile from './components/CharacterProfile';
 import Expedition from './components/Expedition';
@@ -19,7 +18,7 @@ import Mailbox from './components/Mailbox';
 import Bank from './components/Bank';
 import ToastSystem from './components/ToastSystem';
 import EventBanner from './components/EventBanner';
-import { User, Map, Swords, Coins, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown, Mail, Landmark, Skull } from 'lucide-react';
+import { User, Map, Swords, Coins, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown, Mail, Landmark, Skull, Scroll } from 'lucide-react';
 
 const INITIAL_REGIONS: Region[] = [
     { id: 'r1', name: "Karanlık Orman", minLevel: 1, description: "Acemi gladyatörlerin ilk durağı." },
@@ -107,7 +106,7 @@ function App() {
   const saveTimeout = useRef<any>(null);
   const hpRegenTick = useRef<number>(0);
 
-  const addToast = (message: string, type: 'success' | 'error' | 'info' | 'loot' = 'info', duration = 3000) => {
+  const addToast = (message: string, type: 'success' | 'error' | 'info' | 'loot' | 'levelup' = 'info', duration = 3000) => {
       const id = Date.now().toString() + Math.random();
       setToasts(prev => [...prev, { id, message, type, duration }]);
   };
@@ -134,6 +133,16 @@ function App() {
 
   const initPlayer = async (user: any) => {
       setLoading(true);
+      
+      // Load Game System Data (Items, Mods, Events) from DB
+      const sysData = await fetchGameSystemData();
+      if(sysData) {
+          if(sysData.baseItems.length > 0) setBaseItems(sysData.baseItems);
+          if(sysData.modifiers.length > 0) setModifiers(sysData.modifiers);
+          if(sysData.marketItems.length > 0) setMarketItems(sysData.marketItems);
+          if(sysData.activeEvent) setActiveEvent(sysData.activeEvent);
+      }
+
       const localKey = `aol_save_${user.id}`;
       let loadedFromLocal = false;
 
@@ -191,7 +200,7 @@ function App() {
       await supabase.auth.signOut();
   };
 
-  // --- CENTRAL GAME LOOP & HP REGEN ---
+  // --- CENTRAL GAME LOOP & HP REGEN & LEVEL UP CHECK ---
   useEffect(() => {
     if (!session || loading) return;
     
@@ -227,6 +236,14 @@ function App() {
                 updated.piggyBank += Math.floor(league.passiveGold * 0.2); // 20% accumulation
                 updated.lastIncomeTime = now;
                 addToast(`Şampiyon Maaşı: ${league.passiveGold} Altın`, 'loot');
+                changed = true;
+            }
+
+            // 4. LEVEL UP CHECK
+            const lvlCheck = processLevelUp(updated);
+            if (lvlCheck.leveledUp) {
+                updated = lvlCheck.updatedPlayer;
+                addToast(`SEVİYE ATLADIN! (Lvl ${updated.level})`, 'levelup', 5000);
                 changed = true;
             }
             
@@ -290,7 +307,7 @@ function App() {
                       });
                   }
               } else {
-                  // PvE Rewards
+                  // PvE Rewards (Scale with Level)
                   goldReward = (newEnemy.level * 10) + Math.floor(Math.random() * 20);
                   xpReward = (newEnemy.level * 20) + Math.floor(Math.random() * 10);
                   vpReward = 1;
@@ -352,10 +369,11 @@ function App() {
 
   // --- ARENA ACTIONS ---
   
-  // PvE Search
-  const handlePveSearch = async () => {
+  // PvE Search (Updated to accept difficulty/level offset)
+  const handlePveSearch = async (levelOffset: number = 0) => {
     if (isBusy) return;
-    const baseEnemy = generateEnemy(player.level);
+    // levelOffset increases difficulty but also rewards (handled in battle logic implicitly by higher level enemy)
+    const baseEnemy = generateEnemy(player.level + levelOffset);
     const flavor = await generateEnemyNameAndDescription(baseEnemy.level);
     
     setArenaBattle({
@@ -401,6 +419,14 @@ function App() {
           round: 0
       });
   };
+
+  const handleViewChange = (newView: View) => {
+      // Clear Arena/PvP state when switching views to prevent "same mob" issue
+      if (currentView === 'arena' || currentView === 'pvp') {
+          handleArenaReset();
+      }
+      setCurrentView(newView);
+  }
 
 
   // --- EXPEDITION COMPLETION CHECKER ---
@@ -660,11 +686,11 @@ function App() {
     addToast(msg, "success");
   };
 
-  if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-yellow-500 font-cinzel text-xl animate-pulse">Arena Yükleniyor...</div>;
+  if (loading) return <div className="min-h-screen bg-stone-950 flex items-center justify-center text-amber-600 font-cinzel text-xl animate-pulse">Arena Yükleniyor...</div>;
   if (!session) return <LoginScreen onLoginSuccess={() => {}} />;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-200 pb-20 md:pb-0 font-sans selection:bg-yellow-500/30">
+    <div className="min-h-screen bg-stone-900 text-stone-300 pb-20 md:pb-0 font-serif selection:bg-amber-900/50">
       <ToastSystem toasts={toasts} removeToast={removeToast} />
       
       {activeEvent && activeEvent.isActive && <EventBanner event={activeEvent} />}
@@ -675,20 +701,31 @@ function App() {
         currentUserRole={player.role}
         users={[player]} 
         onAddItemToPlayer={(id, item) => setPlayer(p => ({...p, inventory: addToInventory(p.inventory, item)}))}
-        baseItems={baseItems} setBaseItems={setBaseItems}
+        baseItems={baseItems} 
+        setBaseItems={(items) => {
+            setBaseItems(items);
+            const newItem = items[items.length - 1];
+            if(newItem) saveSystemData('item', newItem);
+        }}
         materials={materials} setMaterials={setMaterials}
-        modifiers={modifiers} setModifiers={setModifiers}
+        modifiers={modifiers} 
+        setModifiers={(mods) => {
+            setModifiers(mods);
+        }}
         marketItems={marketItems} setMarketItems={setMarketItems}
         globalConfig={globalConfig} setGlobalConfig={setGlobalConfig}
         regions={regions} onAddRegion={r => setRegions(prev => [...prev, r])}
         locations={locations} onAddLocation={l => setLocations(p => [...p, l])} onDeleteLocation={id => setLocations(p => p.filter(l => l.id !== id))}
         onBanUser={() => setPlayer(DEFAULT_PLAYER_TEMPLATE)} 
-        onEditUser={(id, updates) => setPlayer(p => ({...p, ...updates}))} 
+        onEditUser={(id, updates) => {
+            setPlayer(p => ({...p, ...updates}));
+            updateProfile(id, updates);
+        }} 
         onGivePremium={(id, days) => setPlayer(p => ({...p, premiumUntil: Date.now() + days*86400000}))} 
         onAddAnnouncement={(ann) => setAnnouncements(prev => [ann, ...prev])}
         enemyTemplates={enemyTemplates} onAddEnemyTemplate={() => {}} onDeleteEnemyTemplate={() => {}}
         currentPlayerId={player.id} 
-        activeEvent={activeEvent} onUpdateEvent={setActiveEvent}
+        activeEvent={activeEvent} onUpdateEvent={(e) => { setActiveEvent(e); saveSystemData('event', e); }}
         onAddGold={() => setPlayer(p => ({...p, gold: p.gold + 1000}))} onLevelUp={() => setPlayer(p => ({...p, currentXp: p.maxXp}))} onHeal={() => setPlayer(p => ({...p, hp: p.maxHp}))}
       />
 
@@ -705,48 +742,80 @@ function App() {
         announcements={announcements}
       />
 
-      <header className="sticky top-0 z-50 bg-slate-900/95 backdrop-blur border-b border-slate-700 h-16 flex items-center justify-between px-4 md:px-8 shadow-lg">
-        <div className="flex items-center gap-2">
-            <h1 className="text-xl md:text-2xl font-bold cinzel bg-gradient-to-r from-yellow-500 to-amber-700 bg-clip-text text-transparent">
-                Arena of Legends
+      {/* HEADER: Temple Frieze Style */}
+      <header className="sticky top-0 z-50 bg-stone-900 border-b-4 border-amber-800 h-20 flex items-center justify-between px-4 md:px-8 shadow-xl relative">
+        {/* Decorative Pattern overlay */}
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/greek-vase.png')] opacity-10 pointer-events-none"></div>
+        
+        <div className="flex items-center gap-3 z-10">
+            <div className="p-2 border-2 border-amber-600 rounded-full bg-stone-950">
+                <Swords size={20} className="text-amber-500" />
+            </div>
+            <h1 className="text-xl md:text-2xl font-black cinzel text-amber-500 drop-shadow-md tracking-wider">
+                ARENA OF LEGENDS
             </h1>
         </div>
-        <div className="flex items-center gap-4">
-             <div className="flex items-center gap-2 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
-                <Coins size={16} className="text-yellow-500" />
-                <span className="font-mono font-bold text-yellow-100">{player.gold}</span>
+        <div className="flex items-center gap-6 z-10">
+             <div className="flex items-center gap-2 bg-stone-950 px-4 py-2 rounded border border-amber-800 shadow-inner">
+                <Coins size={18} className="text-yellow-500" />
+                <span className="font-mono font-bold text-yellow-100 text-lg">{player.gold.toLocaleString()}</span>
             </div>
              
-             <button onClick={() => setShowMailbox(true)} className="relative text-slate-400 hover:text-white">
-                <Mail size={24}/>
+             <button onClick={() => setShowMailbox(true)} className="relative text-stone-400 hover:text-amber-400 transition-colors">
+                <Mail size={26}/>
                 {(player.messages.length > 0 || player.reports.length > 0) && (
-                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-600 border border-stone-900 rounded-full animate-pulse"></span>
                 )}
             </button>
 
              {(player.role === 'admin' || player.role === 'moderator') && (
-                 <button onClick={() => setShowAdmin(true)} className="text-slate-400 hover:text-white"><Settings size={20} /></button>
+                 <button onClick={() => setShowAdmin(true)} className="text-stone-400 hover:text-amber-400 transition-colors"><Settings size={22} /></button>
              )}
              
-             <button onClick={handleLogout} className="text-red-400 hover:text-red-300"><LogOut size={20} /></button>
+             <button onClick={handleLogout} className="text-stone-500 hover:text-red-400 transition-colors"><LogOut size={22} /></button>
         </div>
       </header>
 
-      <div className="flex max-w-7xl mx-auto h-[calc(100vh-64px-40px)] overflow-hidden"> 
-        <nav className="hidden md:flex w-64 flex-col border-r border-slate-700 bg-slate-800/50 p-4 gap-2">
-            {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Skull, label: 'Zindan (PvE)' }, { id: 'pvp', icon: Swords, label: 'PvP Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'bank', icon: Landmark, label: 'Banka' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
-                <button key={item.id} onClick={() => setCurrentView(item.id as View)} className={`flex items-center gap-3 p-3 rounded-lg transition-all ${currentView === item.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-700 text-slate-400'}`}>
-                    <item.icon size={20} /> {item.label}
+      <div className="flex max-w-7xl mx-auto h-[calc(100vh-80px-40px)] overflow-hidden mt-4 bg-stone-950/80 border-x-2 border-stone-800 shadow-2xl relative"> 
+        {/* Background Texture for Main Area */}
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/black-scales.png')] opacity-20 pointer-events-none"></div>
+
+        {/* SIDEBAR: Stone Column Style */}
+        <nav className="hidden md:flex w-64 flex-col border-r-4 border-stone-800 bg-stone-900 p-4 gap-2 z-10 relative">
+            <div className="mb-4 pb-4 border-b border-stone-700 text-center text-xs text-stone-500 uppercase tracking-widest font-bold">Menü</div>
+            {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Skull, label: 'Zindan' }, { id: 'pvp', icon: Swords, label: 'PvP Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'bank', icon: Landmark, label: 'Kasa' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
+                <button 
+                    key={item.id} 
+                    onClick={() => handleViewChange(item.id as View)} 
+                    className={`
+                        flex items-center gap-3 p-3 rounded border transition-all duration-300
+                        ${currentView === item.id 
+                            ? 'bg-gradient-to-r from-amber-900/50 to-stone-900 border-amber-600 text-amber-400 shadow-[inset_0_0_10px_rgba(0,0,0,0.5)]' 
+                            : 'bg-transparent border-transparent text-stone-400 hover:text-stone-200 hover:bg-stone-800 hover:border-stone-700'}
+                    `}
+                >
+                    <item.icon size={20} className={currentView === item.id ? 'text-amber-500' : ''} /> 
+                    <span className="cinzel font-bold">{item.label}</span>
                     {(item.id === 'arena' || item.id === 'pvp') && arenaBattle.isFighting && arenaBattle.mode === (item.id === 'arena' ? 'pve' : 'pvp') && <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
                 </button>
             ))}
+            
+            <div className="mt-auto text-center">
+                <button onClick={() => setShowGuide(true)} className="text-xs text-stone-500 hover:text-amber-500 flex items-center justify-center gap-1 w-full p-2 hover:bg-stone-800 rounded">
+                    <HelpCircle size={14}/> Rehber
+                </button>
+            </div>
         </nav>
 
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
+        <main className="flex-1 overflow-y-auto p-4 md:p-8 relative z-10 custom-scrollbar">
             {currentView === 'character' && (
                 <CharacterProfile 
                     player={player} 
-                    onUpgradeStat={() => {}} 
+                    onUpgradeStat={(stat) => {
+                        if(player.statPoints > 0) {
+                            setPlayer(p => ({...p, statPoints: p.statPoints - 1, stats: {...p.stats, [stat]: p.stats[stat] + 1}}));
+                        }
+                    }} 
                     onEquip={handleEquipItem} 
                     onUnequip={handleUnequipItem}
                     onDelete={item => setPlayer(p => ({...p, inventory: removeFromInventory(p.inventory, item.id)}))}
@@ -844,11 +913,12 @@ function App() {
         </main>
       </div>
       
-      <nav className="md:hidden fixed bottom-0 left-0 w-full bg-slate-900 border-t border-slate-800 flex justify-around p-3 z-50 overflow-x-auto">
+      {/* Mobile Nav */}
+      <nav className="md:hidden fixed bottom-0 left-0 w-full bg-stone-900 border-t-2 border-amber-800 flex justify-around p-3 z-50 overflow-x-auto shadow-[0_-5px_15px_rgba(0,0,0,0.5)]">
          {[User, Map, Skull, Swords, ShoppingBag, Landmark, Hammer, Trophy].map((Icon, idx) => {
              const views: View[] = ['character', 'expedition', 'arena', 'pvp', 'market', 'bank', 'blacksmith', 'leaderboard'];
              return (
-                <button key={idx} onClick={() => setCurrentView(views[idx])} className={`flex flex-col items-center gap-1 text-xs min-w-[50px] ${currentView === views[idx] ? 'text-indigo-400' : 'text-slate-500'} relative`}>
+                <button key={idx} onClick={() => handleViewChange(views[idx])} className={`flex flex-col items-center gap-1 text-xs min-w-[50px] ${currentView === views[idx] ? 'text-amber-500' : 'text-stone-500'} relative`}>
                     <Icon size={20} />
                     {(views[idx] === 'arena' || views[idx] === 'pvp') && arenaBattle.isFighting && arenaBattle.mode === (views[idx] === 'arena' ? 'pve' : 'pvp') && <span className="absolute top-0 right-2 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
                 </button>
