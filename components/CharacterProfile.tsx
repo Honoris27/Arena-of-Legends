@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Player, StatType, Equipment, Item, ItemRarity, ItemType } from '../types';
 import { calculateMaxXp, getPlayerTotalStats, calculateSellPrice, canEquipItem } from '../services/gameLogic';
-import { Sword, Shield, Zap, Brain, Clover, Plus, Crown, Hand, Footprints, Coins, CircleDollarSign, Trash2, FlaskConical, Circle, Search, X, Scroll } from 'lucide-react';
+import { Sword, Shield, Zap, Brain, Clover, Plus, Crown, Hand, Footprints, Coins, CircleDollarSign, Trash2, FlaskConical, Circle, Search, X, Scroll, Edit, Lock } from 'lucide-react';
 import ItemTooltip from './ItemTooltip';
+import { supabase } from '../services/supabase';
 
 interface CharacterProfileProps {
   player: Player;
@@ -14,6 +15,7 @@ interface CharacterProfileProps {
   onDelete: (item: Item) => void;
   onSell: (item: Item) => void;
   onUse: (item: Item) => void;
+  onUpdateBio: (bio: string) => void; // New prop
 }
 
 // ---- HELPER COMPONENTS ----
@@ -160,7 +162,7 @@ const StatRow = ({
     );
   };
 
-const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeStat, onEquip, onUnequip, onDelete, onSell, onUse }) => {
+const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeStat, onEquip, onUnequip, onDelete, onSell, onUse, onUpdateBio }) => {
   const totalStats = getPlayerTotalStats(player);
   const maxXp = calculateMaxXp(player.level);
   const xpPercentage = Math.min(100, (player.currentXp / maxXp) * 100);
@@ -173,6 +175,12 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
   const [selectedInventoryItem, setSelectedInventoryItem] = useState<DisplayItem | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<'all' | 'equip' | 'consumable' | 'material'>('all');
+
+  // Edit Profile State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editBio, setEditBio] = useState(player.bio || "");
+  const [newPassword, setNewPassword] = useState("");
+  const [passMessage, setPassMessage] = useState("");
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -221,12 +229,30 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
       });
   }, [player.inventory, searchTerm, filterType]);
 
-  // Handle Multi-Item Operations for Stacks
+  const handleSaveProfile = async () => {
+      onUpdateBio(editBio);
+      
+      if(newPassword) {
+          if(newPassword.length < 6) {
+              setPassMessage("Şifre en az 6 karakter olmalı.");
+              return;
+          }
+          const { error } = await supabase.auth.updateUser({ password: newPassword });
+          if(error) setPassMessage("Şifre hatası: " + error.message);
+          else {
+              setPassMessage("Şifre başarıyla güncellendi.");
+              setNewPassword("");
+              setTimeout(() => setIsEditing(false), 1500);
+          }
+      } else {
+          setIsEditing(false);
+      }
+  };
+
+  // ... (Inventory handlers handleBatchSell etc. remain same, omitting for brevity as they are unchanged)
   const handleBatchSell = (displayItem: DisplayItem) => {
-      // Logic: Sell one instance of the item
       const realItem = player.inventory.find(i => i.id === displayItem.stackIds[0]);
       if(realItem) onSell(realItem);
-      // If last item was sold, clear selection
       if(displayItem.count <= 1) setSelectedInventoryItem(null);
   };
 
@@ -248,7 +274,6 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
       setSelectedInventoryItem(null);
   }
 
-  // --- DOUBLE CLICK HANDLER ---
   const handleItemDoubleClick = (item: DisplayItem) => {
       if (['weapon', 'shield', 'armor', 'helmet', 'gloves', 'boots', 'ring', 'necklace', 'earring', 'belt'].includes(item.type)) {
           handleSingleEquip(item);
@@ -257,10 +282,44 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
       }
   };
 
-
   return (
     <div className="max-w-6xl mx-auto pb-10 grid grid-cols-1 lg:grid-cols-12 gap-6 relative">
       
+      {/* EDIT MODAL */}
+      {isEditing && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur p-4">
+              <div className="bg-slate-900 border border-slate-600 rounded-xl p-6 max-w-md w-full shadow-2xl">
+                  <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2"><Edit size={20}/> Profili Düzenle</h3>
+                  
+                  <div className="mb-4">
+                      <label className="text-xs text-slate-400 block mb-1">Biyografi (Karakter Hikayesi)</label>
+                      <textarea 
+                          value={editBio} 
+                          onChange={(e) => setEditBio(e.target.value)}
+                          className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white h-24 resize-none focus:border-indigo-500 outline-none"
+                      />
+                  </div>
+                  
+                  <div className="mb-4 border-t border-slate-800 pt-4">
+                      <label className="text-xs text-slate-400 block mb-1 flex items-center gap-1"><Lock size={12}/> Yeni Şifre (İsteğe Bağlı)</label>
+                      <input 
+                          type="password"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Değiştirmek için yazın..."
+                          className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white focus:border-indigo-500 outline-none"
+                      />
+                      {passMessage && <div className="text-xs mt-1 text-yellow-500">{passMessage}</div>}
+                  </div>
+
+                  <div className="flex gap-2 justify-end">
+                      <button onClick={() => setIsEditing(false)} className="px-4 py-2 bg-slate-700 text-slate-300 rounded hover:bg-slate-600">İptal</button>
+                      <button onClick={handleSaveProfile} className="px-4 py-2 bg-green-700 text-white font-bold rounded hover:bg-green-600">Kaydet</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* GLOBAL FLOATING TOOLTIP */}
       {hoveredItem && (
           <div 
@@ -280,15 +339,17 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
       <div className="lg:col-span-5 space-y-6">
           
           {/* Avatar & Basic Info */}
-          <div className="bg-slate-800 border border-slate-600 rounded-xl p-4 flex gap-4 items-center shadow-lg relative overflow-hidden">
-               <div className="absolute top-0 right-0 p-2 opacity-50 text-[10px] bg-slate-900 rounded-bl text-slate-400">
-                   Rol: <span className="uppercase font-bold text-yellow-500">{player.role}</span>
-               </div>
+          <div className="bg-slate-800 border border-slate-600 rounded-xl p-4 flex gap-4 items-center shadow-lg relative overflow-hidden group">
+               <button onClick={() => setIsEditing(true)} className="absolute top-2 right-2 p-1.5 bg-slate-700/50 rounded hover:bg-slate-700 text-slate-400 hover:text-white transition-colors">
+                   <Edit size={14}/>
+               </button>
+               
                <img src={player.avatarUrl} className="w-20 h-20 rounded-full border-2 border-slate-500 bg-slate-900" />
                <div className="flex-1">
                    <h2 className="text-xl font-bold text-white cinzel">{player.name}</h2>
                    <div className="text-xs text-slate-400 mb-2">Seviye {player.level} Gladyatör</div>
-                   
+                   <div className="text-[10px] text-slate-500 italic mb-2 line-clamp-1">{player.bio || "Biyografi yok..."}</div>
+
                    {/* XP Bar */}
                    <div className="w-full h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700">
                         <div className="h-full bg-yellow-500" style={{ width: `${xpPercentage}%` }}></div>
@@ -311,7 +372,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
                       <EquipmentSlot item={player.equipment.boots} slotName="Bot" icon={Footprints} onClick={() => onUnequip('boots')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
                   </div>
 
-                  {/* Center Character Placeholder (Visual only) */}
+                  {/* Center Character Placeholder */}
                   <div className="w-24 h-64 bg-slate-900/50 rounded-full border border-slate-700/50 hidden md:flex items-center justify-center opacity-30">
                       <span className="cinzel text-4xl">⚔️</span>
                   </div>
@@ -347,7 +408,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
               
               <div className="mt-4 grid grid-cols-2 gap-2 text-center">
                   <div className="bg-slate-900 p-2 rounded border border-slate-700">
-                      <div className="text-[10px] text-slate-500">HP</div>
+                      <div className="text-[10px] text-slate-500">HP (Yenilenme: {Math.max(1, Math.floor(totalStats.INT/10))}/5sn)</div>
                       <div className="text-sm font-bold text-red-500">{player.hp} / {player.maxHp}</div>
                   </div>
                   <div className="bg-slate-900 p-2 rounded border border-slate-700">

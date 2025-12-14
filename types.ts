@@ -167,6 +167,15 @@ export interface ActiveExpedition {
     rewardMultiplier: number;
 }
 
+export interface BankDeposit {
+    id: string;
+    amount: number;
+    startTime: number;
+    endTime: number; // 7 days later
+    interestRate: number; // e.g. 0.10 for 10%
+    status: 'active' | 'completed' | 'cancelled';
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -187,6 +196,11 @@ export interface Player {
   inventory: Item[];
   isBanned?: boolean;
   
+  // New PvP Stats
+  honor: number;
+  victoryPoints: number;
+  piggyBank: number; // For League Leader mechanic
+  
   // Resources
   expeditionPoints: number;
   maxExpeditionPoints: number;
@@ -200,6 +214,9 @@ export interface Player {
   learnedModifiers: string[]; 
   blacksmithQueue: BlacksmithJob[];
   blacksmithSlots: number;
+
+  // Banking
+  bankDeposits: BankDeposit[];
 
   premiumUntil: number;
 
@@ -218,6 +235,7 @@ export interface EnemyTemplate {
 }
 
 export interface Enemy {
+  id?: string; // Optional ID if it's a real player
   name: string;
   level: number;
   stats: Stats;
@@ -225,6 +243,9 @@ export interface Enemy {
   hp: number;
   description?: string;
   isBoss?: boolean;
+  gold?: number; // For stealing
+  isPlayer?: boolean; // Flag to differentiate mobs from players
+  piggyBank?: number;
 }
 
 export interface Region {
@@ -244,6 +265,7 @@ export interface ExpeditionLocation {
     desc: string;
     risk: string;
     rewardRate: number; 
+    difficultyScore: number; // 1-5 for Victory Points
 }
 
 export interface RankEntry {
@@ -252,6 +274,8 @@ export interface RankEntry {
     name: string;
     level: number;
     wins: number;
+    honor: number;
+    victoryPoints: number;
     avatar: string;
     bio?: string;
     stats?: Stats;

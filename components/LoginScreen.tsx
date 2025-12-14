@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { User, Lock, ArrowRight, Mail, AlertCircle, CheckCircle, Database, Copy, Check, X } from 'lucide-react';
 import { supabase } from '../services/supabase';
@@ -14,7 +15,7 @@ const AVATARS = [
     "https://api.dicebear.com/7.x/avataaars/svg?seed=Naevia"
 ];
 
-const SQL_SETUP_CODE = `-- 1. Profiles Tablosunu Oluştur
+const SQL_SETUP_CODE = `-- 1. Profiles Tablosunu Oluştur veya Güncelle
 create table if not exists public.profiles (
   id uuid references auth.users not null primary key,
   name text,
@@ -22,12 +23,26 @@ create table if not exists public.profiles (
   level int default 1,
   gold int default 50,
   wins int default 0,
+  honor int default 0, -- YENİ: PvP Onur Puanı
+  victory_points int default 0, -- YENİ: Zafer Puanı
+  piggy_bank int default 0, -- YENİ: Lig Lideri Kumbarası
   data jsonb default '{}'::jsonb, -- Oyun verilerini tutan kolon
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- Eski tabloları güncelleme (Zaten varsa hata vermez)
+alter table public.profiles add column if not exists honor int default 0;
+alter table public.profiles add column if not exists victory_points int default 0;
+alter table public.profiles add column if not exists piggy_bank int default 0;
+
 -- 2. Güvenlik Ayarları (RLS)
 alter table public.profiles enable row level security;
+
+-- Mevcut politikaları temizle (conflict önlemek için)
+drop policy if exists "Herkes profilleri görebilir." on public.profiles;
+drop policy if exists "Kullanıcı kendi profilini ekleyebilir." on public.profiles;
+drop policy if exists "Kullanıcı kendi profilini güncelleyebilir." on public.profiles;
+drop policy if exists "Herkes herkesi gorebilir" on public.profiles;
 
 create policy "Herkes profilleri görebilir." on public.profiles
   for select using (true);
@@ -42,13 +57,15 @@ create policy "Kullanıcı kendi profilini güncelleyebilir." on public.profiles
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
-  insert into public.profiles (id, name, avatar_url, level, gold, wins, data)
+  insert into public.profiles (id, name, avatar_url, level, gold, wins, honor, victory_points, data)
   values (
     new.id,
     new.raw_user_meta_data->>'full_name',
     new.raw_user_meta_data->>'avatar_url',
     1,
     50,
+    0,
+    0,
     0,
     -- Varsayılan Oyun Verisi (JSON)
     jsonb_build_object(
@@ -57,6 +74,7 @@ begin
       'hp', 120, 'maxHp', 120, 'mp', 50, 'maxMp', 50,
       'expeditionPoints', 15, 'maxExpeditionPoints', 15,
       'inventory', '[]'::jsonb,
+      'bankDeposits', '[]'::jsonb,
       'equipment', jsonb_build_object(
           'weapon', null, 'shield', null, 'helmet', null, 'armor', null, 
           'gloves', null, 'boots', null, 'necklace', null, 'ring', null, 

@@ -1,4 +1,5 @@
 
+
 import { createClient } from '@supabase/supabase-js';
 import { Player, RankEntry } from '../types';
 
@@ -23,6 +24,9 @@ export const savePlayerProfile = async (player: Player, wins: number = 0) => {
                 level: player.level,
                 gold: player.gold,
                 wins: wins,
+                honor: player.honor, // Added
+                victory_points: player.victoryPoints, // Added
+                piggy_bank: player.piggyBank, // Added
                 updated_at: new Date().toISOString(),
                 data: player // Store full player object json
             });
@@ -32,7 +36,7 @@ export const savePlayerProfile = async (player: Player, wins: number = 0) => {
             if (error.code === '42703' || error.code === 'PGRST204') {
                 criticalSchemaError = true;
                 console.error("🚨 CRITICAL DATABASE ERROR 🚨");
-                console.error("The 'data' column is missing in the 'profiles' table.");
+                console.error("The 'data' column or new columns are missing in the 'profiles' table.");
                 console.error("👉 PLEASE RUN THE CONTENT OF 'database_schema.sql' IN YOUR SUPABASE SQL EDITOR TO FIX THIS.");
             } else {
                 console.error('Error saving profile:', JSON.stringify(error, null, 2));
@@ -41,6 +45,12 @@ export const savePlayerProfile = async (player: Player, wins: number = 0) => {
     } catch (err) {
         console.error('Exception saving profile:', err);
     }
+};
+
+export const updateProfile = async (playerId: string, updates: Partial<Player>) => {
+    // This function can be used for partial updates directly to columns if needed
+    // Currently savePlayerProfile handles the main sync.
+    // This placeholder is for future direct column updates.
 };
 
 export const loadPlayerProfile = async (userId: string): Promise<Player | null> => {
@@ -79,11 +89,12 @@ export const loadPlayerProfile = async (userId: string): Promise<Player | null> 
 
 export const fetchLeaderboard = async (): Promise<RankEntry[]> => {
     try {
+        // Attempt to fetch new columns, fallback if they don't exist yet
         const { data, error } = await supabase
             .from('profiles')
-            .select('name, level, wins, avatar_url')
+            .select('name, level, wins, honor, victory_points, avatar_url, data')
             .order('wins', { ascending: false })
-            .limit(10);
+            .limit(20);
 
         if (error) throw error;
 
@@ -92,7 +103,11 @@ export const fetchLeaderboard = async (): Promise<RankEntry[]> => {
             name: entry.name,
             level: entry.level,
             wins: entry.wins || 0,
-            avatar: entry.avatar_url
+            honor: entry.honor || 0,
+            victoryPoints: entry.victory_points || 0,
+            avatar: entry.avatar_url,
+            bio: entry.data?.bio,
+            stats: entry.data?.stats
         }));
     } catch (err) {
         console.error('Error fetching leaderboard:', err);

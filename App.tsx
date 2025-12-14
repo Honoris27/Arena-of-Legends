@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Player, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, Toast, BlacksmithJob, ItemRarity, ItemType, GameEvent, GlobalConfig, CombatReport, ArenaBattleState, Enemy } from './types';
-import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus, INITIAL_MARKET_ITEMS, DEFAULT_GLOBAL_CONFIG, formatTime, generateEnemy, calculateDamage } from './services/gameLogic';
-import { supabase, savePlayerProfile, loadPlayerProfile } from './services/supabase';
+import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus, INITIAL_MARKET_ITEMS, DEFAULT_GLOBAL_CONFIG, formatTime, generateEnemy, calculateDamage, getPlayerTotalStats } from './services/gameLogic';
+import { supabase, savePlayerProfile, loadPlayerProfile, updateProfile } from './services/supabase';
 import { generateExpeditionStory, generateEnemyNameAndDescription } from './services/geminiService';
 import CharacterProfile from './components/CharacterProfile';
 import Expedition from './components/Expedition';
@@ -15,9 +15,10 @@ import Leaderboard from './components/Leaderboard';
 import Market from './components/Market';
 import Guide from './components/Guide';
 import Mailbox from './components/Mailbox';
+import Bank from './components/Bank';
 import ToastSystem from './components/ToastSystem';
 import EventBanner from './components/EventBanner';
-import { User, Map, Swords, Coins, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown, Mail } from 'lucide-react';
+import { User, Map, Swords, Coins, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown, Mail, Landmark } from 'lucide-react';
 
 const INITIAL_REGIONS: Region[] = [
     { id: 'r1', name: "Karanlık Orman", minLevel: 1, description: "Acemi gladyatörlerin ilk durağı." },
@@ -26,8 +27,10 @@ const INITIAL_REGIONS: Region[] = [
 ];
 
 const INITIAL_LOCATIONS: ExpeditionLocation[] = [
-    { id: 'l1', regionId: 'r1', name: "Orman Girişi", minLevel: 1, duration: 1, risk: "Düşük", rewardRate: 1, desc: "Basit yaratıklar." },
-    { id: 'l2', regionId: 'r1', name: "Kurt İni", minLevel: 2, duration: 2, risk: "Düşük", rewardRate: 1.2, desc: "Kurt sürüleri." },
+    { id: 'l1', regionId: 'r1', name: "Orman Girişi", minLevel: 1, duration: 1, risk: "Düşük", rewardRate: 1, desc: "Basit yaratıklar.", difficultyScore: 1 },
+    { id: 'l2', regionId: 'r1', name: "Kurt İni", minLevel: 2, duration: 2, risk: "Düşük", rewardRate: 1.2, desc: "Kurt sürüleri.", difficultyScore: 1 },
+    { id: 'l3', regionId: 'r2', name: "Hayaletli Mahzen", minLevel: 5, duration: 3, risk: "Orta", rewardRate: 1.5, desc: "Ruhlar tarafından korunuyor.", difficultyScore: 2 },
+    { id: 'l4', regionId: 'r3', name: "Lav Nehri", minLevel: 10, duration: 5, risk: "Yüksek", rewardRate: 2, desc: "Aşırı sıcak.", difficultyScore: 3 },
 ];
 
 const DEFAULT_PLAYER_TEMPLATE: Player = {
@@ -50,6 +53,10 @@ const DEFAULT_PLAYER_TEMPLATE: Player = {
   nextExpeditionTime: 0,
   activeExpedition: null, 
   premiumUntil: 0,
+  honor: 0,
+  victoryPoints: 0,
+  piggyBank: 0,
+  bankDeposits: [],
   messages: [],
   reports: [],
   learnedModifiers: [],
@@ -57,7 +64,7 @@ const DEFAULT_PLAYER_TEMPLATE: Player = {
   blacksmithSlots: 2
 };
 
-type View = 'character' | 'expedition' | 'arena' | 'blacksmith' | 'leaderboard' | 'market';
+type View = 'character' | 'expedition' | 'arena' | 'blacksmith' | 'leaderboard' | 'market' | 'bank';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -93,6 +100,7 @@ function App() {
   const [globalConfig, setGlobalConfig] = useState<GlobalConfig>(DEFAULT_GLOBAL_CONFIG);
 
   const saveTimeout = useRef<any>(null);
+  const hpRegenTick = useRef<number>(0);
 
   const addToast = (message: string, type: 'success' | 'error' | 'info' | 'loot' = 'info', duration = 3000) => {
       const id = Date.now().toString() + Math.random();
@@ -124,7 +132,6 @@ function App() {
       const localKey = `aol_save_${user.id}`;
       let loadedFromLocal = false;
 
-      // 1. Try LocalStorage FIRST (Fastest, prevents reset feeling)
       const localData = localStorage.getItem(localKey);
       if (localData) {
           try {
@@ -132,27 +139,22 @@ function App() {
               if (parsed && parsed.id === user.id) {
                   setPlayer(prev => ({ ...DEFAULT_PLAYER_TEMPLATE, ...parsed }));
                   loadedFromLocal = true;
-                  setLoading(false); // Unblock UI immediately
+                  setLoading(false);
               }
           } catch (e) { console.error("Local load fail", e); }
       }
 
-      // 2. Try Supabase (Source of Truth)
       const profile = await loadPlayerProfile(user.id);
       
       if (profile) {
-          // Merge logic: ensure we don't overwrite with stale local data if DB is newer
           const merged = {
               ...DEFAULT_PLAYER_TEMPLATE,
               ...profile,
-              // Keep existing equipment structure
               equipment: { ...DEFAULT_PLAYER_TEMPLATE.equipment, ...profile.equipment }
           };
           setPlayer(merged);
-          // Sync DB back to local
           localStorage.setItem(localKey, JSON.stringify(merged));
       } else if (!loadedFromLocal) {
-          // Initialize New Player (No Local, No DB)
           const meta = user.user_metadata;
           const startingItems: Item[] = globalConfig.startingInventory.map(baseId => {
               const base = baseItems.find(b => b.id === baseId);
@@ -172,7 +174,6 @@ function App() {
               inventory: startingItems
           };
           setPlayer(newPlayer);
-          // Save initially
           localStorage.setItem(localKey, JSON.stringify(newPlayer));
           await savePlayerProfile(newPlayer, 0);
       }
@@ -183,32 +184,42 @@ function App() {
       await supabase.auth.signOut();
   };
 
-  // --- CENTRAL GAME LOOP ---
+  // --- CENTRAL GAME LOOP & HP REGEN ---
   useEffect(() => {
     if (!session || loading) return;
     
     const interval = setInterval(() => {
         const now = Date.now();
         setActiveEvent(prev => checkEventStatus(prev));
+        hpRegenTick.current += 1;
 
         setPlayer(prev => {
-            // 1. Process Active Expedition
-            // Logic handled in checkCompletion effect
-            
-            // 2. Regen Points
             const config = getExpeditionConfig(prev, activeEvent);
             let updated = { ...prev };
+            let changed = false;
             
+            // 1. Expedition Points
             if (prev.expeditionPoints < prev.maxExpeditionPoints && now >= prev.nextPointRegenTime) {
                 updated.expeditionPoints += 1;
                 updated.nextPointRegenTime = now + (config.regenSeconds * 1000);
+                changed = true;
             }
-            return updated;
+
+            // 2. HP Regen (Every 5 seconds)
+            if (hpRegenTick.current % 5 === 0 && updated.hp < updated.maxHp && !arenaBattle.isFighting) {
+                const totalStats = getPlayerTotalStats(prev);
+                // HP regen based on INT: Max(1, INT / 10) per 5 sec
+                const regenAmount = Math.max(1, Math.floor(totalStats.INT / 10));
+                updated.hp = Math.min(updated.maxHp, updated.hp + regenAmount);
+                changed = true;
+            }
+            
+            return changed ? updated : prev;
         });
 
     }, 1000);
     return () => clearInterval(interval);
-  }, [session, loading, activeEvent]); 
+  }, [session, loading, activeEvent, arenaBattle.isFighting]); 
 
   // --- ARENA BATTLE LOOP ---
   useEffect(() => {
@@ -231,16 +242,39 @@ function App() {
               newLogs.push(`${newEnemy.name} yere yığıldı! KAZANDIN!`);
               
               // Rewards
-              const goldReward = (newEnemy.level * 10) + Math.floor(Math.random() * 20);
-              const xpReward = (newEnemy.level * 20) + Math.floor(Math.random() * 10);
+              let goldReward = 0;
+              let xpReward = 0;
+              let honorReward = 0;
+              let vpReward = 0;
+              let extraMsg = "";
+
+              if (newEnemy.isPlayer) {
+                  // PvP Rewards
+                  const stealAmount = newEnemy.gold ? Math.floor(newEnemy.gold * 0.05) : 0;
+                  const piggySteal = newEnemy.piggyBank || 0;
+                  goldReward = stealAmount + piggySteal;
+                  xpReward = (newEnemy.level * 30);
+                  honorReward = 2; // Fixed honor for win
+                  vpReward = 2; // Victory points for pvp
+
+                  if(stealAmount > 0) extraMsg += ` ${stealAmount} Altın çaldın!`;
+                  if(piggySteal > 0) extraMsg += ` LİDER KUMBARASINI PATLATTIN! (+${piggySteal})`;
+              } else {
+                  // Mob Rewards
+                  goldReward = (newEnemy.level * 10) + Math.floor(Math.random() * 20);
+                  xpReward = (newEnemy.level * 20) + Math.floor(Math.random() * 10);
+              }
               
               setPlayer(prev => ({
                   ...prev,
                   gold: prev.gold + goldReward,
-                  currentXp: prev.currentXp + xpReward
+                  currentXp: prev.currentXp + xpReward,
+                  honor: prev.honor + honorReward,
+                  victoryPoints: prev.victoryPoints + vpReward
               }));
               setWins(w => w + 1);
-              addToast(`Zafer! +${goldReward} Altın, +${xpReward} XP`, 'success');
+              addToast(`Zafer! +${goldReward} Altın, +${xpReward} XP` + extraMsg, 'success');
+              if(honorReward > 0) addToast(`+${honorReward} Onur`, 'info');
               
               setArenaBattle(prev => ({ ...prev, enemy: newEnemy, logs: newLogs, isFighting: false, round }));
               setIsBusy(false);
@@ -272,10 +306,14 @@ function App() {
   const handleArenaSearch = async () => {
     if (isBusy) return;
     
-    // 1. Generate Stats Logic
+    // Simulate finding a player (for now using generator but marking as player)
+    // In a real backend, we would fetch a random profile from Supabase with level +/- 2
     const baseEnemy = generateEnemy(player.level);
-    
-    // 2. Enhance with AI (Name/Desc)
+    baseEnemy.isPlayer = true;
+    baseEnemy.gold = Math.floor(Math.random() * 1000) + 100; // Mock gold to steal
+    // 5% chance to find a "Rank 1" with piggy bank
+    if(Math.random() < 0.05) baseEnemy.piggyBank = Math.floor(Math.random() * 5000) + 500;
+
     const flavor = await generateEnemyNameAndDescription(baseEnemy.level);
     
     setArenaBattle({
@@ -370,7 +408,6 @@ function App() {
           activeExpedition: newExpedition
       }));
       
-      // Force Save
       localStorage.setItem(`aol_save_${player.id}`, JSON.stringify({
           ...player,
           expeditionPoints: player.expeditionPoints - 1,
@@ -386,6 +423,10 @@ function App() {
       const goldMult = (evt && evt.isActive) ? evt.goldMultiplier : 1.0;
       const dropMult = (evt && evt.isActive) ? evt.dropRateMultiplier : 1.0;
       const scrollBonus = (evt && evt.isActive) ? evt.scrollDropChance : 0;
+
+      // Find difficulty for VP
+      const loc = locations.find(l => l.id === expedition.locationId);
+      const vpGain = loc ? loc.difficultyScore : 1;
 
       let xpGain = Math.floor(((10 + Math.random() * 10) * expedition.rewardMultiplier) * xpMult);
       let goldGain = Math.floor(((5 + Math.random() * 10) * expedition.rewardMultiplier) * goldMult);
@@ -404,16 +445,15 @@ function App() {
       }
 
       const dmg = Math.floor(player.maxHp * (0.05 + Math.random() * 0.1));
-      const outcome = "success";
       
-      const storyPromise = generateExpeditionStory(expedition.locationName, outcome, `${goldGain} Altın, ${xpGain} XP`);
+      const storyPromise = generateExpeditionStory(expedition.locationName, 'success', `${goldGain} Altın, ${xpGain} XP`);
 
       const report: CombatReport = {
           id: Date.now().toString(),
           title: `Sefer Raporu: ${expedition.locationName}`,
           type: 'expedition',
           outcome: 'victory',
-          rewards: `${goldGain} Altın, ${xpGain} XP ${earnedItems.length > 0 ? ', ' + earnedItems.length + ' Eşya' : ''}`,
+          rewards: `${goldGain} Altın, ${xpGain} XP, +${vpGain} Zafer Puanı ${earnedItems.length > 0 ? ', ' + earnedItems.length + ' Eşya' : ''}`,
           timestamp: Date.now(),
           read: false,
           details: [`Süre: ${formatTime(expedition.endTime - expedition.startTime)}`, `Hasar: ${dmg}`, "Sefer başarıyla tamamlandı."]
@@ -428,6 +468,7 @@ function App() {
               activeExpedition: null,
               currentXp: prev.currentXp + xpGain,
               gold: prev.gold + goldGain,
+              victoryPoints: prev.victoryPoints + vpGain,
               inventory: newInv,
               hp: Math.max(1, prev.hp - dmg),
               reports: [...prev.reports, report]
@@ -634,7 +675,7 @@ function App() {
 
       <div className="flex max-w-7xl mx-auto h-[calc(100vh-64px-40px)] overflow-hidden"> 
         <nav className="hidden md:flex w-64 flex-col border-r border-slate-700 bg-slate-800/50 p-4 gap-2">
-            {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Swords, label: 'Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
+            {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Swords, label: 'Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'bank', icon: Landmark, label: 'Banka' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
                 <button key={item.id} onClick={() => setCurrentView(item.id as View)} className={`flex items-center gap-3 p-3 rounded-lg transition-all ${currentView === item.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-700 text-slate-400'}`}>
                     <item.icon size={20} /> {item.label}
                     {item.id === 'arena' && arenaBattle.isFighting && <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
@@ -652,6 +693,7 @@ function App() {
                     onDelete={item => setPlayer(p => ({...p, inventory: removeFromInventory(p.inventory, item.id)}))}
                     onSell={item => { setPlayer(p => ({...p, gold: p.gold + calculateSellPrice(item), inventory: removeFromInventory(p.inventory, item.id)})); addToast("Satıldı", "success"); }}
                     onUse={handleUseItem}
+                    onUpdateBio={bio => { setPlayer(p => ({...p, bio})); addToast("Biyografi güncellendi", "success"); }}
                 />
             )}
             {currentView === 'expedition' && (
@@ -683,14 +725,55 @@ function App() {
                     onReset={handleArenaReset}
                 />
             )}
+            {currentView === 'bank' && (
+                <Bank 
+                    player={player}
+                    onDeposit={(amount) => {
+                         if(player.gold < amount) return;
+                         const deposit = {
+                             id: Date.now().toString(),
+                             amount: Math.floor(amount * 0.98), // 2% commission
+                             startTime: Date.now(),
+                             endTime: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
+                             interestRate: 0.10, // 10%
+                             status: 'active' as const
+                         };
+                         setPlayer(p => ({ ...p, gold: p.gold - amount, bankDeposits: [...p.bankDeposits, deposit] }));
+                         addToast(`%2 komisyonla ${amount} yatırıldı.`, "success");
+                    }}
+                    onCancelDeposit={(id) => {
+                         const deposit = player.bankDeposits.find(d => d.id === id);
+                         if(!deposit) return;
+                         setPlayer(p => ({
+                             ...p,
+                             gold: p.gold + deposit.amount,
+                             bankDeposits: p.bankDeposits.filter(d => d.id !== id)
+                         }));
+                         addToast("Vade bozuldu, anapara iade edildi.", "info");
+                    }}
+                    onClaimDeposit={(id) => {
+                        const deposit = player.bankDeposits.find(d => d.id === id);
+                        if(!deposit) return;
+                        if(Date.now() < deposit.endTime) return;
+                        
+                        const total = Math.floor(deposit.amount * (1 + deposit.interestRate));
+                        setPlayer(p => ({
+                             ...p,
+                             gold: p.gold + total,
+                             bankDeposits: p.bankDeposits.filter(d => d.id !== id)
+                         }));
+                        addToast(`Vade doldu! ${total} Altın kazanıldı.`, "success");
+                    }}
+                />
+            )}
             {currentView === 'market' && <Market playerGold={player.gold} items={marketItems} onBuy={handleMarketBuy} />}
             {currentView === 'leaderboard' && <Leaderboard />}
         </main>
       </div>
       
       <nav className="md:hidden fixed bottom-0 left-0 w-full bg-slate-900 border-t border-slate-800 flex justify-around p-3 z-50 overflow-x-auto">
-         {[User, Map, Swords, ShoppingBag, Hammer, Trophy].map((Icon, idx) => {
-             const views: View[] = ['character', 'expedition', 'arena', 'market', 'blacksmith', 'leaderboard'];
+         {[User, Map, Swords, ShoppingBag, Landmark, Hammer, Trophy].map((Icon, idx) => {
+             const views: View[] = ['character', 'expedition', 'arena', 'market', 'bank', 'blacksmith', 'leaderboard'];
              return (
                 <button key={idx} onClick={() => setCurrentView(views[idx])} className={`flex flex-col items-center gap-1 text-xs min-w-[50px] ${currentView === views[idx] ? 'text-indigo-400' : 'text-slate-500'} relative`}>
                     <Icon size={20} />
