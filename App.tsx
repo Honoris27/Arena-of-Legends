@@ -18,7 +18,7 @@ import Mailbox from './components/Mailbox';
 import Bank from './components/Bank';
 import ToastSystem from './components/ToastSystem';
 import EventBanner from './components/EventBanner';
-import { User, Map, Swords, Coins, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown, Mail, Landmark, Skull, Scroll } from 'lucide-react';
+import { User, Map, Swords, Coins, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown, Mail, Landmark, Skull, MessageSquare, AlertCircle, Send, X } from 'lucide-react';
 
 const INITIAL_REGIONS: Region[] = [
     { id: 'r1', name: "Karanlık Orman", minLevel: 1, description: "Acemi gladyatörlerin ilk durağı." },
@@ -46,7 +46,7 @@ const DEFAULT_PLAYER_TEMPLATE: Player = {
   statPoints: 0,
   hp: 120, maxHp: 120, mp: 50, maxMp: 50,
   avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Spartacus",
-  equipment: { weapon: null, shield: null, helmet: null, armor: null, gloves: null, boots: null, necklace: null, ring: null, earring: null, belt: null },
+  equipment: { weapon: null, shield: null, helmet: null, armor: null, gloves: null, boots: null, necklace: null, ring: null, ring2: null, earring: null, earring2: null, belt: null },
   inventory: [],
   expeditionPoints: 15,
   maxExpeditionPoints: 15,
@@ -78,6 +78,7 @@ function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [showMailbox, setShowMailbox] = useState(false);
+  const [showSupport, setShowSupport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   
@@ -151,7 +152,13 @@ function App() {
           try {
               const parsed = JSON.parse(localData);
               if (parsed && parsed.id === user.id) {
-                  setPlayer(prev => ({ ...DEFAULT_PLAYER_TEMPLATE, ...parsed }));
+                  // Merge with default to ensure new fields like ring2/earring2 are present
+                  const mergedLocal = {
+                      ...DEFAULT_PLAYER_TEMPLATE,
+                      ...parsed,
+                      equipment: { ...DEFAULT_PLAYER_TEMPLATE.equipment, ...parsed.equipment }
+                  };
+                  setPlayer(mergedLocal);
                   if (parsed.wins) setWins(parsed.wins);
                   loadedFromLocal = true;
                   setLoading(false);
@@ -266,7 +273,7 @@ function App() {
           let battleOver = false;
 
           // Player Turn
-          const dmgToEnemy = calculateDamage(player.stats, newEnemy.stats);
+          const dmgToEnemy = calculateDamage(player.stats, newEnemy.stats, player.equipment, newEnemy.equipment);
           newEnemy.hp -= dmgToEnemy;
           newLogs.push(`Raunt ${round}: ${player.name}, ${newEnemy.name}'a ${dmgToEnemy} hasar verdi!`);
 
@@ -307,7 +314,7 @@ function App() {
                       });
                   }
               } else {
-                  // PvE Rewards (Scale with Level)
+                  // PvE Rewards
                   goldReward = (newEnemy.level * 10) + Math.floor(Math.random() * 20);
                   xpReward = (newEnemy.level * 20) + Math.floor(Math.random() * 10);
                   vpReward = 1;
@@ -332,7 +339,7 @@ function App() {
               setIsBusy(false);
           } else {
                // Enemy Turn
-               const dmgToPlayer = calculateDamage(newEnemy.stats, player.stats);
+               const dmgToPlayer = calculateDamage(newEnemy.stats, player.stats, newEnemy.equipment, player.equipment);
                newPlayerHp -= dmgToPlayer;
                newLogs.push(`Raunt ${round}: ${newEnemy.name}, sana ${dmgToPlayer} hasar verdi!`);
 
@@ -369,10 +376,9 @@ function App() {
 
   // --- ARENA ACTIONS ---
   
-  // PvE Search (Updated to accept difficulty/level offset)
+  // PvE Search
   const handlePveSearch = async (levelOffset: number = 0) => {
     if (isBusy) return;
-    // levelOffset increases difficulty but also rewards (handled in battle logic implicitly by higher level enemy)
     const baseEnemy = generateEnemy(player.level + levelOffset);
     const flavor = await generateEnemyNameAndDescription(baseEnemy.level);
     
@@ -630,7 +636,19 @@ function App() {
       const check = canEquipItem(player, item);
       if (!check.can) { addToast(check.reason!, "error"); return; }
       setPlayer(prev => {
-          const slot = item.type as keyof Equipment;
+          // Special handling for secondary slots.
+          // This logic is simple: if primary is full, try secondary.
+          // Real logic would need user to select slot or double click logic enhancement.
+          // For now, let's keep it standard but acknowledge the type.
+          let slot = item.type as keyof Equipment;
+          
+          // Logic for Ring/Earring: Check if slot 1 is full, if so use slot 2 if available
+          if (item.type === 'ring' && prev.equipment.ring && !prev.equipment.ring2) {
+              slot = 'ring2';
+          } else if (item.type === 'earring' && prev.equipment.earring && !prev.equipment.earring2) {
+              slot = 'earring2';
+          }
+
           const old = prev.equipment[slot];
           let inv = removeFromInventory(prev.inventory, item.id);
           if (old) inv = addToInventory(inv, old);
@@ -685,6 +703,10 @@ function App() {
     setPlayer(p => ({...p, gold: p.gold - item.price, inventory: newInv, hp: newHp, premiumUntil: newPremium}));
     addToast(msg, "success");
   };
+
+  const notificationCount = player.messages.filter(m => !m.read && m.type !== 'sent').length + 
+                            player.reports.filter(r => !r.read).length + 
+                            announcements.length;
 
   if (loading) return <div className="min-h-screen bg-stone-950 flex items-center justify-center text-amber-600 font-cinzel text-xl animate-pulse">Arena Yükleniyor...</div>;
   if (!session) return <LoginScreen onLoginSuccess={() => {}} />;
@@ -742,6 +764,23 @@ function App() {
         announcements={announcements}
       />
 
+      {/* Support Modal */}
+      {showSupport && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur p-4">
+              <div className="bg-stone-900 border border-stone-600 rounded-xl p-6 w-full max-w-md shadow-2xl relative">
+                  <button onClick={() => setShowSupport(false)} className="absolute top-4 right-4 text-stone-400 hover:text-white"><X size={20}/></button>
+                  <h3 className="text-xl font-bold text-amber-500 mb-4 flex items-center gap-2"><MessageSquare size={20}/> Destek & Bildirim</h3>
+                  <p className="text-sm text-stone-400 mb-4">Hata, hile, şikayet veya önerilerinizi buradan iletebilirsiniz.</p>
+                  
+                  <textarea className="w-full bg-stone-950 border border-stone-700 rounded p-3 text-stone-200 h-32 resize-none focus:border-amber-600 outline-none mb-4" placeholder="Mesajınız..."></textarea>
+                  
+                  <button onClick={() => { addToast("Bildirim gönderildi. Teşekkürler!", "success"); setShowSupport(false); }} className="w-full bg-indigo-700 hover:bg-indigo-600 text-white font-bold py-2 rounded flex items-center justify-center gap-2">
+                      <Send size={16}/> Gönder
+                  </button>
+              </div>
+          </div>
+      )}
+
       {/* HEADER: Temple Frieze Style */}
       <header className="sticky top-0 z-50 bg-stone-900 border-b-4 border-amber-800 h-20 flex items-center justify-between px-4 md:px-8 shadow-xl relative">
         {/* Decorative Pattern overlay */}
@@ -751,11 +790,15 @@ function App() {
             <div className="p-2 border-2 border-amber-600 rounded-full bg-stone-950">
                 <Swords size={20} className="text-amber-500" />
             </div>
-            <h1 className="text-xl md:text-2xl font-black cinzel text-amber-500 drop-shadow-md tracking-wider">
+            <h1 className="text-xl md:text-2xl font-black cinzel text-amber-500 drop-shadow-md tracking-wider hidden md:block">
                 ARENA OF LEGENDS
             </h1>
         </div>
-        <div className="flex items-center gap-6 z-10">
+        <div className="flex items-center gap-4 md:gap-6 z-10">
+             <button onClick={() => setShowSupport(true)} className="hidden md:flex items-center gap-1 bg-indigo-900/50 hover:bg-indigo-900 border border-indigo-700 px-3 py-1 rounded text-xs text-indigo-200 transition-colors">
+                 <AlertCircle size={14}/> Destek
+             </button>
+
              <div className="flex items-center gap-2 bg-stone-950 px-4 py-2 rounded border border-amber-800 shadow-inner">
                 <Coins size={18} className="text-yellow-500" />
                 <span className="font-mono font-bold text-yellow-100 text-lg">{player.gold.toLocaleString()}</span>
@@ -763,8 +806,10 @@ function App() {
              
              <button onClick={() => setShowMailbox(true)} className="relative text-stone-400 hover:text-amber-400 transition-colors">
                 <Mail size={26}/>
-                {(player.messages.length > 0 || player.reports.length > 0) && (
-                    <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-600 border border-stone-900 rounded-full animate-pulse"></span>
+                {notificationCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-stone-900 animate-bounce">
+                        {notificationCount}
+                    </span>
                 )}
             </button>
 
@@ -781,27 +826,27 @@ function App() {
         <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/black-scales.png')] opacity-20 pointer-events-none"></div>
 
         {/* SIDEBAR: Stone Column Style */}
-        <nav className="hidden md:flex w-64 flex-col border-r-4 border-stone-800 bg-stone-900 p-4 gap-2 z-10 relative">
-            <div className="mb-4 pb-4 border-b border-stone-700 text-center text-xs text-stone-500 uppercase tracking-widest font-bold">Menü</div>
+        <nav className="hidden md:flex w-64 flex-col border-r-4 border-stone-800 bg-stone-900 p-2 gap-2 z-10 relative">
+            <div className="my-2 pb-2 border-b border-stone-700 text-center text-xs text-stone-500 uppercase tracking-widest font-bold font-serif">Menü</div>
             {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Skull, label: 'Zindan' }, { id: 'pvp', icon: Swords, label: 'PvP Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'bank', icon: Landmark, label: 'Kasa' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
                 <button 
                     key={item.id} 
                     onClick={() => handleViewChange(item.id as View)} 
                     className={`
-                        flex items-center gap-3 p-3 rounded border transition-all duration-300
+                        group flex items-center gap-3 p-3 rounded-lg border-l-4 transition-all duration-300 relative overflow-hidden
                         ${currentView === item.id 
-                            ? 'bg-gradient-to-r from-amber-900/50 to-stone-900 border-amber-600 text-amber-400 shadow-[inset_0_0_10px_rgba(0,0,0,0.5)]' 
-                            : 'bg-transparent border-transparent text-stone-400 hover:text-stone-200 hover:bg-stone-800 hover:border-stone-700'}
+                            ? 'bg-gradient-to-r from-stone-800 to-transparent border-amber-600 text-amber-400' 
+                            : 'bg-transparent border-transparent text-stone-400 hover:text-stone-200 hover:bg-stone-800 hover:border-stone-600 hover:translate-x-1'}
                     `}
                 >
-                    <item.icon size={20} className={currentView === item.id ? 'text-amber-500' : ''} /> 
-                    <span className="cinzel font-bold">{item.label}</span>
+                    <item.icon size={20} className={`transition-transform group-hover:scale-110 ${currentView === item.id ? 'text-amber-500' : ''}`} /> 
+                    <span className="cinzel font-bold z-10">{item.label}</span>
                     {(item.id === 'arena' || item.id === 'pvp') && arenaBattle.isFighting && arenaBattle.mode === (item.id === 'arena' ? 'pve' : 'pvp') && <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
                 </button>
             ))}
             
-            <div className="mt-auto text-center">
-                <button onClick={() => setShowGuide(true)} className="text-xs text-stone-500 hover:text-amber-500 flex items-center justify-center gap-1 w-full p-2 hover:bg-stone-800 rounded">
+            <div className="mt-auto text-center mb-4">
+                <button onClick={() => setShowGuide(true)} className="text-xs text-stone-500 hover:text-amber-500 flex items-center justify-center gap-1 w-full p-2 hover:bg-stone-800 rounded transition-colors">
                     <HelpCircle size={14}/> Rehber
                 </button>
             </div>

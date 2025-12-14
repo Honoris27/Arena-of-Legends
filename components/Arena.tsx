@@ -104,8 +104,8 @@ const Arena: React.FC<ArenaProps> = ({ player, isBusy, battleState, onSearch, on
                 </div>
             </div>
 
-            {/* VS Badge */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 hidden md:block">
+            {/* VS Badge - Added pointer-events-none to prevent blocking clicks */}
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 hidden md:block pointer-events-none">
                 <div className="bg-stone-950 border-4 border-amber-700 rounded-full w-20 h-20 flex items-center justify-center font-black text-3xl cinzel text-red-600 shadow-[0_0_30px_rgba(220,38,38,0.5)] animate-pulse-slow">VS</div>
             </div>
 

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { Player, StatType, Equipment, Item, ItemRarity, ItemType } from '../types';
-import { calculateMaxXp, getPlayerTotalStats, calculateSellPrice, canEquipItem, getStatDescription } from '../services/gameLogic';
+import { calculateMaxXp, getPlayerTotalStats, calculateSellPrice, canEquipItem, getStatDescription, getEquipmentBonuses } from '../services/gameLogic';
 import { Sword, Shield, Zap, Brain, Clover, Plus, Crown, Hand, Footprints, Coins, CircleDollarSign, Trash2, FlaskConical, Circle, Search, X, Scroll, Edit, Lock, Trophy, Medal } from 'lucide-react';
 import ItemTooltip from './ItemTooltip';
 import { supabase } from '../services/supabase';
@@ -173,6 +173,7 @@ const StatRow = ({
 
 const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeStat, onEquip, onUnequip, onDelete, onSell, onUse, onUpdateBio }) => {
   const totalStats = getPlayerTotalStats(player);
+  const bonuses = getEquipmentBonuses(player.equipment);
   const maxXp = calculateMaxXp(player.level);
   const xpPercentage = Math.min(100, (player.currentXp / maxXp) * 100);
 
@@ -407,8 +408,12 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
                            <EquipmentSlot item={player.equipment.shield} slotName="Kalkan" icon={Shield} onClick={() => onUnequip('shield')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
                       </div>
                       <div className="flex gap-2">
-                           <EquipmentSlot item={player.equipment.ring} slotName="Yüzük" icon={Circle} onClick={() => onUnequip('ring')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
-                           <EquipmentSlot item={player.equipment.earring} slotName="Küpe" icon={Circle} onClick={() => onUnequip('earring')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
+                           <EquipmentSlot item={player.equipment.ring} slotName="Yüzük I" icon={Circle} onClick={() => onUnequip('ring')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
+                           <EquipmentSlot item={player.equipment.ring2 || null} slotName="Yüzük II" icon={Circle} onClick={() => onUnequip('ring2')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
+                      </div>
+                      <div className="flex gap-2">
+                           <EquipmentSlot item={player.equipment.earring} slotName="Küpe I" icon={Circle} onClick={() => onUnequip('earring')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
+                           <EquipmentSlot item={player.equipment.earring2 || null} slotName="Küpe II" icon={Circle} onClick={() => onUnequip('earring2')} onHover={setHoveredItem} onLeave={() => setHoveredItem(null)} />
                       </div>
                   </div>
               </div>
@@ -420,12 +425,25 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
                   <h3 className="text-sm font-bold text-amber-500 uppercase cinzel">Özellikler</h3>
                   {player.statPoints > 0 && <span className="text-xs bg-yellow-900 text-yellow-200 px-2 py-0.5 rounded font-bold animate-pulse">{player.statPoints} Puan</span>}
               </div>
-              <div className="space-y-1">
+              <div className="space-y-1 mb-4">
                 <StatRow label="Güç" value={totalStats.STR} baseValue={player.stats.STR} icon={Sword} canUpgrade={player.statPoints > 0} onUpgrade={() => onUpgradeStat('STR')} colorClass="text-red-500" tooltip={getStatDescription('STR', totalStats.STR, player.level)}/>
                 <StatRow label="Çeviklik" value={totalStats.AGI} baseValue={player.stats.AGI} icon={Zap} canUpgrade={player.statPoints > 0} onUpgrade={() => onUpgradeStat('AGI')} colorClass="text-yellow-500" tooltip={getStatDescription('AGI', totalStats.AGI, player.level)}/>
                 <StatRow label="Can" value={totalStats.VIT} baseValue={player.stats.VIT} icon={Shield} canUpgrade={player.statPoints > 0} onUpgrade={() => onUpgradeStat('VIT')} colorClass="text-green-500" tooltip={getStatDescription('VIT', totalStats.VIT, player.level)}/>
                 <StatRow label="Zeka" value={totalStats.INT} baseValue={player.stats.INT} icon={Brain} canUpgrade={player.statPoints > 0} onUpgrade={() => onUpgradeStat('INT')} colorClass="text-blue-500" tooltip={getStatDescription('INT', totalStats.INT, player.level)}/>
                 <StatRow label="Şans" value={totalStats.LUK} baseValue={player.stats.LUK} icon={Clover} canUpgrade={player.statPoints > 0} onUpgrade={() => onUpgradeStat('LUK')} colorClass="text-purple-500" tooltip={getStatDescription('LUK', totalStats.LUK, player.level)}/>
+              </div>
+
+              {/* Advanced Stats */}
+              <div className="bg-stone-950 p-2 rounded border border-stone-800 space-y-1">
+                  <div className="flex justify-between text-xs text-stone-400">
+                      <span>Ekstra Savunma:</span> <span className="text-green-400 font-mono">+{bonuses.defense}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-stone-400">
+                      <span>Kritik Direnci:</span> <span className="text-blue-400 font-mono">%{bonuses.critRes}</span>
+                  </div>
+                  <div className="flex justify-between text-xs text-stone-400">
+                      <span>Ekstra Kritik Şansı:</span> <span className="text-yellow-400 font-mono">%{bonuses.critChanceBonus}</span>
+                  </div>
               </div>
               
               <div className="mt-4 grid grid-cols-2 gap-2 text-center">

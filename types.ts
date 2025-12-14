@@ -1,5 +1,4 @@
 
-
 export type StatType = 'STR' | 'AGI' | 'VIT' | 'INT' | 'LUK';
 
 export interface Stats {
@@ -29,7 +28,7 @@ export interface GlobalConfig {
 // --- COMPLEX MODIFIER TYPES (GDD) ---
 
 export interface ModifierBonus {
-    stat: StatType | 'CRIT_CHANCE' | 'CRIT_DAMAGE' | 'ARMOR_PEN' | 'LIFESTEAL' | 'DODGE' | 'DAMAGE_REDUCTION' | 'GOLD_GAIN' | 'XP_GAIN' | 'DROP_CHANCE';
+    stat: StatType | 'CRIT_CHANCE' | 'CRIT_DAMAGE' | 'DEFENSE' | 'CRIT_RESISTANCE' | 'GOLD_GAIN' | 'XP_GAIN' | 'DROP_CHANCE';
     value: number;
     type: BonusType;
     mode: GameMode;
@@ -114,8 +113,10 @@ export interface Equipment {
   gloves: Item | null;
   boots: Item | null;
   necklace: Item | null; 
-  ring: Item | null; 
-  earring: Item | null; 
+  ring: Item | null;
+  ring2?: Item | null; // NEW SLOT
+  earring: Item | null;
+  earring2?: Item | null; // NEW SLOT
   belt: Item | null; 
 }
 
@@ -255,6 +256,7 @@ export interface Enemy {
   piggyBank?: number;
   rank?: number; // PvP Rank
   avatarUrl?: string;
+  equipment?: Equipment; // For calculating defensive stats
 }
 
 export interface Region {

@@ -1,5 +1,5 @@
 
-import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus, GameEvent, MarketItem, GlobalConfig, LeagueInfo } from '../types';
+import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus, GameEvent, MarketItem, GlobalConfig, LeagueInfo, Equipment } from '../types';
 
 export const isPremium = (player: Player): boolean => {
     return player.premiumUntil > Date.now();
@@ -23,16 +23,12 @@ export const checkEventStatus = (event: GameEvent | null): GameEvent | null => {
 
 // --- LEAGUE LOGIC ---
 export const getLeagueInfo = (level: number): LeagueInfo => {
-    // 1-9, 10-19, 20-39, 40-59, 60-79, 80-99, 100-119...
     if (level < 10) return { id: 'l1', name: "1-9 Seviye Ligi", minLevel: 1, maxLevel: 9, passiveGold: 10 };
     if (level < 20) return { id: 'l2', name: "10-19 Seviye Ligi", minLevel: 10, maxLevel: 19, passiveGold: 20 };
     
-    // Pattern: 20 levels per league after lvl 20
     const tier = Math.floor((level - 20) / 20); 
     const min = 20 + (tier * 20);
     const max = min + 19;
-    
-    // Gold scales with tier
     const gold = 50 + (tier * 50);
 
     return {
@@ -46,7 +42,6 @@ export const getLeagueInfo = (level: number): LeagueInfo => {
 
 export const getExpeditionConfig = (player: Player, activeEvent?: GameEvent | null) => {
     const premium = isPremium(player);
-    // Only apply multipliers if event is active
     const eventTimeMult = (activeEvent && activeEvent.isActive) ? activeEvent.expeditionTimeMultiplier : 1.0;
     
     const baseCooldown = premium ? 60 : 120;
@@ -68,8 +63,6 @@ export const formatTime = (ms: number): string => {
 };
 
 export const calculateMaxXp = (level: number): number => {
-  // Linear-Exponential curve: Harder at first, then scales reasonable
-  // Base 100. Lvl 2: 150. Lvl 3: 225...
   return Math.floor(100 * Math.pow(1.2, level - 1) + (level * 50));
 };
 
@@ -84,8 +77,12 @@ export const calculateMaxMp = (int: number, level: number): number => {
 export const getPlayerTotalStats = (player: Player): Stats => {
   const totalStats = { ...player.stats };
   
-  Object.values(player.equipment).forEach((item) => {
-    if (item) {
+  // Iterate through all possible equipment slots including new ones
+  const slots: (keyof Equipment)[] = ['weapon', 'shield', 'helmet', 'armor', 'gloves', 'boots', 'necklace', 'ring', 'ring2', 'earring', 'earring2', 'belt'];
+
+  slots.forEach(slot => {
+      const item = player.equipment[slot];
+      if (item) {
         if (item.stats.STR) totalStats.STR += item.stats.STR;
         if (item.stats.AGI) totalStats.AGI += item.stats.AGI;
         if (item.stats.VIT) totalStats.VIT += item.stats.VIT;
@@ -99,21 +96,41 @@ export const getPlayerTotalStats = (player: Player): Stats => {
                 }
             });
         }
-    }
+      }
   });
 
   return totalStats;
 };
 
-// NEW: Helper to get stat description for tooltips
+export const getEquipmentBonuses = (equipment?: Equipment) => {
+    let defense = 0;
+    let critRes = 0;
+    let critChanceBonus = 0;
+
+    if (!equipment) return { defense, critRes, critChanceBonus };
+
+    Object.values(equipment).forEach(item => {
+        if (item && item.bonuses) {
+            item.bonuses.forEach((b: ModifierBonus) => {
+                if (b.type === 'FLAT') {
+                    if (b.stat === 'DEFENSE') defense += b.value;
+                    if (b.stat === 'CRIT_RESISTANCE') critRes += b.value;
+                    if (b.stat === 'CRIT_CHANCE') critChanceBonus += b.value;
+                }
+            });
+        }
+    });
+    return { defense, critRes, critChanceBonus };
+};
+
 export const getStatDescription = (stat: StatType, value: number, level: number): string => {
     switch (stat) {
         case 'STR':
             return `Fiziksel Hasar: ~${Math.floor(value * 1.5)}`;
         case 'AGI':
-            return `Kritik Şansı: %${(value * 0.05).toFixed(2)}`; // Simplified
+            return `Kritik Şansı: %${(value * 0.05).toFixed(2)}`;
         case 'VIT':
-            return `Can (HP): +${value * 10}\nDefans: +${Math.floor(value * 0.5)}`;
+            return `Can (HP): +${value * 10}\nDefans (Doğal): +${Math.floor(value * 0.5)}`;
         case 'INT':
             return `Mana (MP): +${value * 5}\nHP Yenileme: +${Math.max(1, Math.floor(value / 10))}/5sn`;
         case 'LUK':
@@ -130,16 +147,32 @@ export const canEquipItem = (player: Player, item: Item): { can: boolean, reason
     return { can: true };
 };
 
-export const calculateDamage = (attackerStats: Stats, defenderStats: Stats): number => {
+export const calculateDamage = (attackerStats: Stats, defenderStats: Stats, attackerEquip?: Equipment, defenderEquip?: Equipment): number => {
+  // 1. Base Damage Calculation
   const baseDamage = attackerStats.STR * 1.5;
-  const mitigation = defenderStats.VIT * 0.5;
+  
+  // 2. Defensive Stats Calculation
+  const { defense: defBonus, critRes: critResBonus } = getEquipmentBonuses(defenderEquip);
+  const { critChanceBonus } = getEquipmentBonuses(attackerEquip);
+
+  // VIT gives natural defense (0.5 per VIT) + Item Defense Bonus
+  const totalDefense = (defenderStats.VIT * 0.5) + defBonus;
+  
+  // 3. Crit Calculation
+  // Base crit from LUK/AGI + Item Bonus - Defender Res
+  let critChance = ((attackerStats.LUK * 0.5 + attackerStats.AGI * 0.5) * 0.05) + critChanceBonus;
+  critChance -= critResBonus; // Reduce chance by resistance %
+  
+  // Cap/Floor
+  critChance = Math.max(0, Math.min(75, critChance)); // Max 75% crit chance
+
+  const isCrit = Math.random() * 100 < critChance;
+
+  // 4. Final Damage
   const variation = Math.random() * 0.2 + 0.9; 
-
-  const critChance = (attackerStats.LUK + attackerStats.AGI) * 0.01;
-  const isCrit = Math.random() < critChance;
-
-  let damage = Math.max(1, (baseDamage - mitigation) * variation);
-  if (isCrit) damage *= 2;
+  let damage = Math.max(1, (baseDamage - totalDefense) * variation);
+  
+  if (isCrit) damage *= 2; // Critical Hit
 
   return Math.floor(damage);
 };
@@ -149,15 +182,14 @@ export const processLevelUp = (player: Player): { updatedPlayer: Player, leveled
     let p = { ...player };
     let levelsGained = 0;
     
-    // Check if player has enough XP for next level, loop for multiple levels
     while (p.currentXp >= p.maxXp) {
         p.currentXp -= p.maxXp;
         p.level += 1;
         p.maxXp = calculateMaxXp(p.level);
-        p.statPoints += 5; // Give 5 stat points per level
-        p.maxHp = calculateMaxHp(p.stats.VIT, p.level); // Update Max HP
-        p.maxMp = calculateMaxMp(p.stats.INT, p.level); // Update Max MP
-        p.hp = p.maxHp; // Full heal on level up
+        p.statPoints += 5;
+        p.maxHp = calculateMaxHp(p.stats.VIT, p.level);
+        p.maxMp = calculateMaxMp(p.stats.INT, p.level);
+        p.hp = p.maxHp;
         p.mp = p.maxMp;
         levelsGained++;
     }
@@ -165,12 +197,9 @@ export const processLevelUp = (player: Player): { updatedPlayer: Player, leveled
     return { updatedPlayer: p, leveledUp: levelsGained > 0, levelsGained };
 };
 
-// PVE MONSTER GENERATOR
 export const generateEnemy = (playerLevel: number, isBoss: boolean = false): Enemy => {
   const levelVariation = isBoss ? 5 : Math.floor(Math.random() * 3) - 1; 
-  // Allow difficulty scaling via parameter indirectly if playerLevel is boosted before calling
   const level = Math.max(1, playerLevel + levelVariation);
-  
   const multiplier = isBoss ? 5 : 3;
   const baseStat = level * multiplier;
   
@@ -194,80 +223,24 @@ export const generateEnemy = (playerLevel: number, isBoss: boolean = false): Ene
     maxHp,
     hp: maxHp,
     isBoss,
-    isPlayer: false // IMPORTANT for PvE
+    isPlayer: false
   };
 };
 
 // --- DATA ---
 
 export const INITIAL_BASE_ITEMS: BaseItem[] = [
-    // 1.1 Weapons
     { id: 'w1', name: 'Kılıç', type: 'weapon', minLevel: 1, baseStats: { STR: 5 } },
     { id: 'w2', name: 'Balta', type: 'weapon', minLevel: 3, baseStats: { STR: 8 } },
-    { id: 'w3', name: 'Mızrak', type: 'weapon', minLevel: 5, baseStats: { STR: 7, AGI: 2 } },
-    { id: 'w4', name: 'Hançer', type: 'weapon', minLevel: 2, baseStats: { STR: 3, AGI: 5 } },
-    { id: 'w5', name: 'Topuz', type: 'weapon', minLevel: 4, baseStats: { STR: 10 } },
-    { id: 'w6', name: 'Çekiç', type: 'weapon', minLevel: 6, baseStats: { STR: 12 } },
-    { id: 'w7', name: 'Gladyatör Kılıcı', type: 'weapon', minLevel: 10, baseStats: { STR: 15, VIT: 2 } },
-    { id: 'w8', name: 'Roma Kılıcı', type: 'weapon', minLevel: 15, baseStats: { STR: 20, AGI: 5 } },
-
-    // 1.2 Helmets
-    { id: 'h1', name: 'Deri Başlık', type: 'helmet', minLevel: 1, baseStats: { VIT: 2 } },
-    { id: 'h2', name: 'Bronz Miğfer', type: 'helmet', minLevel: 5, baseStats: { VIT: 5 } },
-    { id: 'h3', name: 'Demir Miğfer', type: 'helmet', minLevel: 10, baseStats: { VIT: 8, STR: 1 } },
-    { id: 'h4', name: 'Çelik Miğfer', type: 'helmet', minLevel: 15, baseStats: { VIT: 12, STR: 2 } },
-    { id: 'h5', name: 'Gladyatör Miğferi', type: 'helmet', minLevel: 20, baseStats: { VIT: 18, STR: 4 } },
-
-    // 1.3 Armors
     { id: 'a1', name: 'Deri Zırh', type: 'armor', minLevel: 1, baseStats: { VIT: 4 } },
-    { id: 'a2', name: 'Bronz Zırh', type: 'armor', minLevel: 5, baseStats: { VIT: 8 } },
-    { id: 'a3', name: 'Demir Zırh', type: 'armor', minLevel: 10, baseStats: { VIT: 12 } },
-    { id: 'a4', name: 'Zincir Zırh', type: 'armor', minLevel: 12, baseStats: { VIT: 15, AGI: -1 } },
-    { id: 'a5', name: 'Çelik Zırh', type: 'armor', minLevel: 15, baseStats: { VIT: 20 } },
-    { id: 'a6', name: 'Gladyatör Zırhı', type: 'armor', minLevel: 20, baseStats: { VIT: 30, STR: 5 } },
-
-    // 1.4 Shields
+    { id: 'h1', name: 'Deri Başlık', type: 'helmet', minLevel: 1, baseStats: { VIT: 2 } },
     { id: 's1', name: 'Tahta Kalkan', type: 'shield', minLevel: 1, baseStats: { VIT: 3 } },
-    { id: 's2', name: 'Deri Kalkan', type: 'shield', minLevel: 3, baseStats: { VIT: 5 } },
-    { id: 's3', name: 'Bronz Kalkan', type: 'shield', minLevel: 5, baseStats: { VIT: 8 } },
-    { id: 's4', name: 'Demir Kalkan', type: 'shield', minLevel: 10, baseStats: { VIT: 12 } },
-    { id: 's5', name: 'Çelik Kalkan', type: 'shield', minLevel: 15, baseStats: { VIT: 18 } },
-    { id: 's6', name: 'Gladyatör Kalkanı', type: 'shield', minLevel: 20, baseStats: { VIT: 25, STR: 2 } },
-
-    // 1.5 Gloves
-    { id: 'g1', name: 'Deri Eldiven', type: 'gloves', minLevel: 1, baseStats: { AGI: 1, VIT: 1 } },
-    { id: 'g2', name: 'Bronz Eldiven', type: 'gloves', minLevel: 5, baseStats: { AGI: 2, VIT: 2 } },
-    { id: 'g3', name: 'Demir Eldiven', type: 'gloves', minLevel: 10, baseStats: { AGI: 3, VIT: 4 } },
-    { id: 'g4', name: 'Çelik Eldiven', type: 'gloves', minLevel: 15, baseStats: { AGI: 5, VIT: 6 } },
-    { id: 'g5', name: 'Savaş Eldiveni', type: 'gloves', minLevel: 20, baseStats: { AGI: 8, STR: 2 } },
-
-    // 1.6 Boots
+    { id: 'g1', name: 'Deri Eldiven', type: 'gloves', minLevel: 1, baseStats: { AGI: 1 } },
     { id: 'b1', name: 'Deri Çizme', type: 'boots', minLevel: 1, baseStats: { AGI: 2 } },
-    { id: 'b2', name: 'Bronz Çizme', type: 'boots', minLevel: 5, baseStats: { AGI: 4, VIT: 1 } },
-    { id: 'b3', name: 'Demir Çizme', type: 'boots', minLevel: 10, baseStats: { AGI: 6, VIT: 2 } },
-    { id: 'b4', name: 'Çelik Çizme', type: 'boots', minLevel: 15, baseStats: { AGI: 8, VIT: 3 } },
-    { id: 'b5', name: 'Gladyatör Sandalı', type: 'boots', minLevel: 20, baseStats: { AGI: 12 } },
-
-    // 1.7 Rings
     { id: 'r1', name: 'Bronz Yüzük', type: 'ring', minLevel: 1, baseStats: { LUK: 1 } },
-    { id: 'r2', name: 'Demir Yüzük', type: 'ring', minLevel: 5, baseStats: { LUK: 2, STR: 1 } },
-    { id: 'r3', name: 'Gümüş Yüzük', type: 'ring', minLevel: 10, baseStats: { LUK: 4, INT: 2 } },
-    { id: 'r4', name: 'Altın Yüzük', type: 'ring', minLevel: 15, baseStats: { LUK: 6, STR: 2 } },
-    { id: 'r5', name: 'Arena Yüzüğü', type: 'ring', minLevel: 20, baseStats: { LUK: 10, STR: 5 } },
-
-    // 1.8 Necklaces
     { id: 'n1', name: 'Deri Kolye', type: 'necklace', minLevel: 1, baseStats: { INT: 1 } },
-    { id: 'n2', name: 'Bronz Kolye', type: 'necklace', minLevel: 5, baseStats: { INT: 2, VIT: 1 } },
-    { id: 'n3', name: 'Gümüş Kolye', type: 'necklace', minLevel: 10, baseStats: { INT: 4, VIT: 2 } },
-    { id: 'n4', name: 'Altın Kolye', type: 'necklace', minLevel: 15, baseStats: { INT: 6, LUK: 2 } },
-    { id: 'n5', name: 'Arena Kolyesi', type: 'necklace', minLevel: 20, baseStats: { INT: 10, VIT: 5 } },
-
-    // 1.9 Belts
     { id: 'bl1', name: 'Deri Kemer', type: 'belt', minLevel: 1, baseStats: { VIT: 2 } },
-    { id: 'bl2', name: 'Bronz Kemer', type: 'belt', minLevel: 5, baseStats: { VIT: 4, STR: 1 } },
-    { id: 'bl3', name: 'Demir Kemer', type: 'belt', minLevel: 10, baseStats: { VIT: 6, STR: 2 } },
-    { id: 'bl4', name: 'Çelik Kemer', type: 'belt', minLevel: 15, baseStats: { VIT: 8, STR: 3 } },
-    { id: 'bl5', name: 'Gladyatör Kemeri', type: 'belt', minLevel: 20, baseStats: { VIT: 12, STR: 5 } },
+    { id: 'e1', name: 'Bakır Küpe', type: 'earring', minLevel: 1, baseStats: { INT: 1 } },
 ];
 
 export const INITIAL_MATERIALS: ItemMaterial[] = [
@@ -275,7 +248,6 @@ export const INITIAL_MATERIALS: ItemMaterial[] = [
     { id: 'mat2', name: 'Bronz', levelReq: 5, statMultiplier: 1.2, rarity: 'common' },
     { id: 'mat3', name: 'Demir', levelReq: 10, statMultiplier: 1.5, rarity: 'uncommon' },
     { id: 'mat4', name: 'Çelik', levelReq: 15, statMultiplier: 1.8, rarity: 'uncommon' },
-    { id: 'mat5', name: 'Mithril', levelReq: 25, statMultiplier: 2.5, rarity: 'rare' },
 ];
 
 export const INITIAL_MODIFIERS: ItemModifier[] = [
@@ -291,6 +263,16 @@ export const INITIAL_MODIFIERS: ItemModifier[] = [
             { stat: 'STR', value: 2, type: 'FLAT', mode: 'GLOBAL' },
             { stat: 'CRIT_CHANCE', value: 5, type: 'PERCENT', mode: 'ARENA' }
         ]
+    },
+    {
+        id: 'mod3', name: 'Kaya Gibi', type: 'prefix', minLevel: 5, rarity: 'uncommon', allowedTypes: ['armor', 'shield'],
+        isActive: true, fragmentCost: 30,
+        bonuses: [{ stat: 'DEFENSE', value: 5, type: 'FLAT', mode: 'GLOBAL' }]
+    },
+    {
+        id: 'mod4', name: 'Dengeli', type: 'suffix', minLevel: 10, rarity: 'rare', allowedTypes: ['helmet', 'boots'],
+        isActive: true, fragmentCost: 40,
+        bonuses: [{ stat: 'CRIT_RESISTANCE', value: 3, type: 'PERCENT', mode: 'GLOBAL' }]
     }
 ];
 
@@ -298,8 +280,6 @@ export const INITIAL_MARKET_ITEMS: MarketItem[] = [
     { id: 'p1', name: "PREMIUM (15 Gün)", type: 'premium', price: 5000, description: "+%50 Sefer Puanı, -%50 Bekleme Süresi.", icon: "👑" },
     { id: 'm1', name: "Şans Tozu", type: 'material', price: 250, description: "Demirci başarı şansını %20 artırır.", icon: "✨" },
     { id: 'm2', name: "Can İksiri", type: 'consumable', price: 100, description: "Canını tamamen yeniler.", effect: 'heal', icon: "🍷" },
-    { id: 'm3', name: "Acemi Sandığı", type: 'consumable', price: 500, description: "Rastgele Common/Uncommon eşya içerir.", effect: 'box_common', icon: "📦" },
-    { id: 'm4', name: "Usta Sandığı", type: 'consumable', price: 2000, description: "Rastgele Rare+ eşya içerir.", effect: 'box_rare', icon: "🎁" },
 ];
 
 export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
@@ -307,7 +287,7 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
     startingGold: 50,
     startingStatPoints: 0,
     startingStats: { STR: 10, AGI: 5, VIT: 10, INT: 5, LUK: 5 },
-    startingInventory: ['w1', 'a1'] // Start with simple sword and leather armor
+    startingInventory: ['w1', 'a1'] 
 };
 
 // --- GENERATOR LOGIC ---
@@ -332,19 +312,16 @@ export const generateDynamicItem = (
         else if (roll > 0.50) rarity = 'uncommon';
     }
 
-    // 2. Select Base Item (+/- 5 levels)
     const validBaseItems = baseItems.filter(i => Math.abs(i.minLevel - targetLevel) < 10);
     const baseItem = validBaseItems.length > 0 
         ? validBaseItems[Math.floor(Math.random() * validBaseItems.length)]
         : baseItems[Math.floor(Math.random() * baseItems.length)];
 
-    // 3. Select Material
     const validMaterials = materials.filter(m => m.levelReq <= targetLevel + 5);
     const material = validMaterials.length > 0
         ? validMaterials[Math.floor(Math.random() * validMaterials.length)]
         : materials[0];
 
-    // 4. Select Modifiers
     const validPrefixes = modifiers.filter(m => m.isActive && m.type === 'prefix' && (m.allowedTypes === 'ALL' || m.allowedTypes.includes(baseItem.type)) && !m.isAiOnly);
     const validSuffixes = modifiers.filter(m => m.isActive && m.type === 'suffix' && (m.allowedTypes === 'ALL' || m.allowedTypes.includes(baseItem.type)) && !m.isAiOnly);
 
@@ -362,12 +339,10 @@ export const generateDynamicItem = (
         }
     }
 
-    // 5. Calculate Stats & Bonuses
     const finalStats: Partial<Stats> = {};
     const finalBonuses: ModifierBonus[] = [];
     const matMult = material.statMultiplier;
 
-    // Base Stats
     Object.entries(baseItem.baseStats).forEach(([key, val]) => {
         const k = key as StatType;
         if (typeof val === 'number') {
@@ -375,11 +350,9 @@ export const generateDynamicItem = (
         }
     });
 
-    // Apply Modifiers
     [prefix, suffix].forEach(mod => {
         if (!mod) return;
         mod.bonuses.forEach(bonus => {
-            // Flatten basic stats into the item stats for easier reading, keep complex ones in bonus array
             if (bonus.type === 'FLAT' && bonus.mode === 'GLOBAL' && ['STR','AGI','VIT','INT','LUK'].includes(bonus.stat)) {
                  const current = finalStats[bonus.stat as StatType] || 0;
                  finalStats[bonus.stat as StatType] = current + bonus.value;
@@ -388,7 +361,6 @@ export const generateDynamicItem = (
         });
     });
 
-    // 6. Name
     let fullName = "";
     if (material.name !== 'Deri' || baseItem.type !== 'weapon') fullName += material.name + " ";
     if (prefix) fullName += prefix.name + " ";
@@ -465,8 +437,6 @@ export const removeFromInventory = (inventory: Item[], itemId: string, amount: n
                 updated.push({ ...item, count: item.count - amount });
             } else if (item.count === amount) {
                 // Remove entirely
-            } else {
-                 // Not enough, but logic typically checks beforehand. Just remove.
             }
         } else {
             updated.push(item);
@@ -508,7 +478,6 @@ export const upgradeItem = (item: Item): Item => {
 
 export const calculateSalvageReturn = (item: Item, activeEvent?: GameEvent | null): { prefixFrag: number, suffixFrag: number } => {
     const base = item.rarity === 'legendary' ? 10 : item.rarity === 'epic' ? 5 : item.rarity === 'rare' ? 3 : 1;
-    // Check if event is strictly active
     const mult = (activeEvent && activeEvent.isActive) ? activeEvent.salvageYieldMultiplier : 1.0;
     
     return { 
@@ -518,7 +487,6 @@ export const calculateSalvageReturn = (item: Item, activeEvent?: GameEvent | nul
 };
 
 export const getBlacksmithTime = (type: 'upgrade' | 'salvage' | 'craft', itemLevel: number): number => {
-    // Returns MS
     const baseTime = type === 'craft' ? 10000 : type === 'salvage' ? 5000 : 3000;
     return baseTime + (itemLevel * 500);
 };

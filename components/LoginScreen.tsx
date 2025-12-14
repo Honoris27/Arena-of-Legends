@@ -64,7 +64,7 @@ create policy "Market Write" on public.market_items for all using (auth.role() =
 create policy "Events Read" on public.game_events for select using (true);
 create policy "Events Write" on public.game_events for all using (auth.role() = 'authenticated');
 
--- 4. Yeni Üye Fonksiyonu
+-- 4. Yeni Üye Fonksiyonu (GÜNCELLENDİ: Slotlar Eklendi)
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
@@ -80,7 +80,7 @@ begin
     50,
     0,
     0, 0, 0, 9999, 0, 'player',
-    jsonb_build_object('stats', jsonb_build_object('STR', 10, 'AGI', 5, 'VIT', 10, 'INT', 5, 'LUK', 5), 'statPoints', 0, 'hp', 120, 'maxHp', 120, 'mp', 50, 'maxMp', 50, 'expeditionPoints', 15, 'maxExpeditionPoints', 15, 'inventory', '[]'::jsonb, 'bankDeposits', '[]'::jsonb, 'equipment', jsonb_build_object('weapon', null, 'shield', null, 'helmet', null, 'armor', null, 'gloves', null, 'boots', null, 'necklace', null, 'ring', null, 'earring', null, 'belt', null))
+    jsonb_build_object('stats', jsonb_build_object('STR', 10, 'AGI', 5, 'VIT', 10, 'INT', 5, 'LUK', 5), 'statPoints', 0, 'hp', 120, 'maxHp', 120, 'mp', 50, 'maxMp', 50, 'expeditionPoints', 15, 'maxExpeditionPoints', 15, 'inventory', '[]'::jsonb, 'bankDeposits', '[]'::jsonb, 'equipment', jsonb_build_object('weapon', null, 'shield', null, 'helmet', null, 'armor', null, 'gloves', null, 'boots', null, 'necklace', null, 'ring', null, 'ring2', null, 'earring', null, 'earring2', null, 'belt', null))
   );
   return new;
 end;
@@ -98,11 +98,6 @@ begin
   update public.profiles set data = jsonb_set(current_data, '{messages}', coalesce(current_data->'messages', '[]'::jsonb) || message_obj) where id = recipient_id;
 end;
 $$;
-
--- 6. ADMİN EKLEME KODU (ID ile)
--- Aşağıdaki 'KULLANICI_ID_BURAYA' kısmını, admin yapmak istediğiniz kullanıcının ID'si ile değiştirin.
--- ID'yi Admin Panelindeki kullanıcı listesinden veya veritabanından bulabilirsiniz.
--- update public.profiles set role = 'admin' where id = 'KULLANICI_ID_BURAYA';
 `;
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
