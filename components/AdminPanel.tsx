@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { X, PlusCircle, Trash2, Edit, Save, Map, Gift, Megaphone, Skull, Users, Package, Database, Hammer, Eye, Check, RefreshCw, Zap, Clock, Coins, FileText, Ban, ShoppingBag, Settings } from 'lucide-react';
 import { Player, Item, ExpeditionLocation, Region, ItemType, Role, Announcement, StatType, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, ModifierBonus, BonusType, GameMode, GameEvent, ItemRarity, MarketItem, GlobalConfig } from '../types';
@@ -273,7 +272,17 @@ const AdminPanel: React.FC<AdminPanelProps> = ({
   }
   const handleAddLoc = () => {
       if(!newLocName || !newLocRegion) return;
-      onAddLocation({ id: Date.now().toString(), regionId: newLocRegion, name: newLocName, minLevel: 1, duration: 2, desc: 'Yeni Alan', risk: 'Orta', rewardRate: 1.5 });
+      onAddLocation({ 
+          id: Date.now().toString(), 
+          regionId: newLocRegion, 
+          name: newLocName, 
+          minLevel: 1, 
+          duration: 2, 
+          desc: 'Yeni Alan', 
+          risk: 'Orta', 
+          rewardRate: 1.5,
+          difficultyScore: 2 // Added default difficulty score
+      });
       setNewLocName('');
   }
 

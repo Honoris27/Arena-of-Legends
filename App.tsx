@@ -370,6 +370,7 @@ function App() {
   // PvP Search (Triggered from List Selection)
   const handlePvpStart = async (selectedEnemy: Enemy) => {
     if (isBusy) return;
+    setCurrentView('pvp'); // Force view switch
     setArenaBattle({
         mode: 'pvp',
         enemy: selectedEnemy,
@@ -731,7 +732,7 @@ function App() {
 
       <div className="flex max-w-7xl mx-auto h-[calc(100vh-64px-40px)] overflow-hidden"> 
         <nav className="hidden md:flex w-64 flex-col border-r border-slate-700 bg-slate-800/50 p-4 gap-2">
-            {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Skull, label: 'Arena' }, { id: 'pvp', icon: Swords, label: 'PvP Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'bank', icon: Landmark, label: 'Banka' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
+            {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Skull, label: 'Zindan (PvE)' }, { id: 'pvp', icon: Swords, label: 'PvP Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'bank', icon: Landmark, label: 'Banka' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
                 <button key={item.id} onClick={() => setCurrentView(item.id as View)} className={`flex items-center gap-3 p-3 rounded-lg transition-all ${currentView === item.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-700 text-slate-400'}`}>
                     <item.icon size={20} /> {item.label}
                     {(item.id === 'arena' || item.id === 'pvp') && arenaBattle.isFighting && arenaBattle.mode === (item.id === 'arena' ? 'pve' : 'pvp') && <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
@@ -832,7 +833,12 @@ function App() {
                 />
             )}
             {currentView === 'market' && <Market playerGold={player.gold} items={marketItems} onBuy={handleMarketBuy} />}
-            {currentView === 'leaderboard' && <Leaderboard />}
+            {currentView === 'leaderboard' && (
+                <Leaderboard 
+                    currentUser={player}
+                    onAttack={handlePvpStart}
+                />
+            )}
         </main>
       </div>
       

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Player, ArenaBattleState, Enemy } from '../types';
 import { Swords, Shield, Crown, Medal, Trophy, RefreshCw } from 'lucide-react';
@@ -142,7 +141,11 @@ const PvpArena: React.FC<PvpArenaProps> = ({ player, isBusy, battleState, onSear
                     <div>
                         <h3 className="text-xl font-bold text-red-400 mb-1 flex items-center gap-2">
                             {enemy.name}
-                            {enemy.rank === 1 && <Crown size={16} className="text-yellow-500 animate-pulse" title="Lig Lideri"/>}
+                            {enemy.rank === 1 && (
+                                <span title="Lig Lideri">
+                                    <Crown size={16} className="text-yellow-500 animate-pulse"/>
+                                </span>
+                            )}
                         </h3>
                         <p className="text-xs text-slate-500 mb-4">Sıralama: #{enemy.rank}</p>
                     </div>

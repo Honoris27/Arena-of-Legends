@@ -284,6 +284,7 @@ export interface RankEntry {
     avatar: string;
     bio?: string;
     stats?: Stats;
+    equipment?: Equipment; // Added for inspection
 }
 
 export interface MarketItem {

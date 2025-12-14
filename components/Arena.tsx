@@ -18,7 +18,7 @@ const Arena: React.FC<ArenaProps> = ({ player, isBusy, battleState, onSearch, on
   return (
     <div className="max-w-4xl mx-auto pb-20">
        <div className="text-center mb-6">
-        <h2 className="text-3xl cinzel font-bold text-white mb-2">Canavar Arenası</h2>
+        <h2 className="text-3xl cinzel font-bold text-white mb-2">Zindan (PvE)</h2>
         <p className="text-slate-400">Vahşi yaratıklara karşı savaş ve ganimet topla.</p>
       </div>
 
@@ -36,7 +36,7 @@ const Arena: React.FC<ArenaProps> = ({ player, isBusy, battleState, onSearch, on
       {!enemy ? (
         <div className="flex flex-col items-center justify-center bg-slate-800/50 border border-slate-700 rounded-xl p-12 min-h-[300px]">
            <div className="text-center mb-6 max-w-md text-slate-400 text-sm">
-               <p className="mb-2">Arenada rastgele yaratıklarla savaş.</p>
+               <p className="mb-2">Zindanda rastgele yaratıklarla savaş.</p>
                <ul className="list-disc list-inside text-slate-300">
                    <li>Altın ve Deneyim Puanı kazan.</li>
                    <li><strong className="text-green-400">+1 Zafer Puanı</strong> kazan.</li>

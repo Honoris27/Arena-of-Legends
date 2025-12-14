@@ -1,15 +1,43 @@
 
 import React, { useEffect, useState } from 'react';
-import { RankEntry, Stats } from '../types';
-import { Trophy, Medal, User, Crown, RefreshCw, MessageCircle, X } from 'lucide-react';
-import { fetchLeaderboard } from '../services/supabase';
+import { RankEntry, Stats, Player, Equipment, Item, Enemy } from '../types';
+import { Trophy, Medal, User, Crown, RefreshCw, MessageCircle, X, Sword, Shield, Zap, Brain, Clover, Hand, Footprints } from 'lucide-react';
+import { fetchLeaderboard, sendMessage } from '../services/supabase';
 
-const Leaderboard: React.FC = () => {
+interface LeaderboardProps {
+    currentUser: Player;
+    onAttack: (enemy: Enemy) => void;
+}
+
+const RARITY_COLORS: any = {
+  common: 'border-slate-600 bg-slate-900 text-slate-300',
+  uncommon: 'border-green-600 bg-slate-900 text-green-300',
+  rare: 'border-blue-600 bg-slate-900 text-blue-300',
+  epic: 'border-purple-600 bg-slate-900 text-purple-300',
+  legendary: 'border-orange-600 bg-slate-900 text-orange-300',
+};
+
+// Mini Component for Displaying Equipment in Modal
+const SimpleEquipSlot = ({ item, icon: Icon }: { item?: Item | null, icon: any }) => {
+    if (!item) return <div className="w-10 h-10 rounded border border-slate-700 bg-slate-800 flex items-center justify-center opacity-50"><Icon size={16}/></div>;
+    return (
+        <div className={`w-10 h-10 rounded border flex items-center justify-center relative group cursor-help ${RARITY_COLORS[item.rarity] || 'border-slate-600'}`}>
+            <Icon size={16} />
+            <div className="absolute opacity-0 group-hover:opacity-100 bottom-full mb-1 bg-black border border-slate-600 text-xs p-2 rounded w-32 z-50 pointer-events-none">
+                <div className="font-bold">{item.name}</div>
+                <div className="text-[9px] text-yellow-500">+{item.upgradeLevel}</div>
+            </div>
+        </div>
+    );
+};
+
+const Leaderboard: React.FC<LeaderboardProps> = ({ currentUser, onAttack }) => {
   const [rankings, setRankings] = useState<RankEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<RankEntry | null>(null);
   const [msgContent, setMsgContent] = useState("");
   const [msgSent, setMsgSent] = useState(false);
+  const [msgError, setMsgError] = useState("");
 
   const loadData = async () => {
       setLoading(true);
@@ -22,15 +50,51 @@ const Leaderboard: React.FC = () => {
       loadData();
   }, []);
 
-  const handleSendMessage = () => {
-      // Mock sending message
-      setMsgSent(true);
-      setTimeout(() => {
-          setMsgSent(false);
-          setMsgContent("");
-          setSelectedUser(null);
-          alert("Mesaj gönderildi!");
-      }, 1000);
+  const handleSendMessage = async () => {
+      if (!selectedUser?.id) return;
+      if (selectedUser.id === currentUser.id) {
+          alert("Kendine mesaj gönderemezsin.");
+          return;
+      }
+
+      setMsgError("");
+      const success = await sendMessage(currentUser.name, selectedUser.id, "Özel Mesaj", msgContent);
+      
+      if (success) {
+          setMsgSent(true);
+          setTimeout(() => {
+              setMsgSent(false);
+              setMsgContent("");
+          }, 2000);
+      } else {
+          setMsgError("Mesaj gönderilemedi.");
+      }
+  };
+
+  const handleAttackClick = () => {
+      if(!selectedUser) return;
+      if(selectedUser.id === currentUser.id) {
+          alert("Kendine saldıramazsın!");
+          return;
+      }
+
+      // Convert RankEntry to Enemy format
+      const enemy: Enemy = {
+          id: selectedUser.id,
+          name: selectedUser.name,
+          level: selectedUser.level,
+          rank: selectedUser.rank,
+          hp: 100, // Default or calculate from stats if available
+          maxHp: 100, // Default
+          stats: selectedUser.stats || { STR:10, AGI:5, VIT:10, INT:5, LUK:5 },
+          description: `Sıralama #${selectedUser.rank}`,
+          isPlayer: true,
+          avatarUrl: selectedUser.avatar,
+          gold: 1000 // Placeholder, handled by backend usually
+      };
+      
+      onAttack(enemy);
+      setSelectedUser(null);
   };
 
   const top3 = rankings.slice(0, 3);
@@ -42,41 +106,80 @@ const Leaderboard: React.FC = () => {
       {/* Player Inspect Modal */}
       {selectedUser && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm animate-fade-in p-4">
-              <div className="bg-slate-900 border border-slate-600 rounded-xl w-full max-w-md p-6 relative shadow-2xl">
-                  <button onClick={() => setSelectedUser(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X /></button>
+              <div className="bg-slate-900 border border-slate-600 rounded-xl w-full max-w-2xl p-6 relative shadow-2xl flex flex-col md:flex-row gap-6 max-h-[90vh] overflow-y-auto">
+                  <button onClick={() => setSelectedUser(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white z-10"><X /></button>
                   
-                  <div className="flex flex-col items-center mb-6">
-                      <img src={selectedUser.avatar} className="w-24 h-24 rounded-full border-4 border-yellow-500 shadow-lg mb-4" />
-                      <h2 className="text-2xl font-bold text-white cinzel">{selectedUser.name}</h2>
-                      <div className="flex gap-4 text-sm text-slate-400 mt-2">
-                          <span>Seviye {selectedUser.level}</span>
-                          <span className="text-yellow-500 font-bold">{selectedUser.wins} Zafer</span>
+                  {/* Left Column: Avatar & Actions */}
+                  <div className="w-full md:w-1/3 flex flex-col items-center border-b md:border-b-0 md:border-r border-slate-700 pb-4 md:pb-0 md:pr-4">
+                      <img src={selectedUser.avatar} className="w-24 h-24 rounded-full border-4 border-yellow-500 shadow-lg mb-4 bg-black" />
+                      <h2 className="text-xl font-bold text-white cinzel text-center">{selectedUser.name}</h2>
+                      <div className="text-yellow-500 font-bold text-sm mb-4">#{selectedUser.rank} • Lvl {selectedUser.level}</div>
+                      
+                      <div className="w-full space-y-2 mt-auto">
+                          <button 
+                            onClick={handleAttackClick}
+                            className="w-full bg-red-700 hover:bg-red-600 text-white font-bold py-2 rounded flex items-center justify-center gap-2 shadow-lg shadow-red-900/50"
+                          >
+                              <Sword size={18}/> SALDIR
+                          </button>
                       </div>
                   </div>
 
-                  <div className="bg-slate-800 p-4 rounded-lg mb-6">
-                      <h3 className="text-xs font-bold text-slate-500 uppercase mb-2">Karakter Tanımı</h3>
-                      <p className="text-slate-300 italic text-sm">
-                          {selectedUser.bio || "Bu gladyatör henüz bir biyografi yazmamış."}
-                      </p>
-                  </div>
+                  {/* Right Column: Stats, Equip, Message */}
+                  <div className="w-full md:w-2/3 space-y-6">
+                      
+                      {/* Bio */}
+                      <div className="bg-slate-800 p-3 rounded text-sm italic text-slate-400">
+                          "{selectedUser.bio || "Sessiz bir savaşçı..."}"
+                      </div>
 
-                  <div className="space-y-2">
-                      <label className="text-xs font-bold text-slate-400">Mesaj Gönder</label>
-                      <textarea 
-                        className="w-full bg-slate-800 border border-slate-700 rounded p-2 text-white text-sm focus:border-indigo-500 outline-none"
-                        rows={3}
-                        placeholder="Mesajını yaz..."
-                        value={msgContent}
-                        onChange={e => setMsgContent(e.target.value)}
-                      ></textarea>
-                      <button 
-                        onClick={handleSendMessage}
-                        disabled={!msgContent || msgSent}
-                        className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded transition-colors flex items-center justify-center gap-2"
-                      >
-                          {msgSent ? 'Gönderildi!' : <><MessageCircle size={16}/> Gönder</>}
-                      </button>
+                      {/* Stats Grid */}
+                      <div>
+                          <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">İstatistikler</h4>
+                          <div className="grid grid-cols-5 gap-2 text-center bg-slate-800 p-2 rounded">
+                              <div><div className="text-xs text-slate-500">STR</div><div className="text-white font-mono">{selectedUser.stats?.STR || 0}</div></div>
+                              <div><div className="text-xs text-slate-500">AGI</div><div className="text-white font-mono">{selectedUser.stats?.AGI || 0}</div></div>
+                              <div><div className="text-xs text-slate-500">VIT</div><div className="text-white font-mono">{selectedUser.stats?.VIT || 0}</div></div>
+                              <div><div className="text-xs text-slate-500">INT</div><div className="text-white font-mono">{selectedUser.stats?.INT || 0}</div></div>
+                              <div><div className="text-xs text-slate-500">LUK</div><div className="text-white font-mono">{selectedUser.stats?.LUK || 0}</div></div>
+                          </div>
+                      </div>
+
+                      {/* Equipment Grid */}
+                      <div>
+                          <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Ekipmanlar</h4>
+                          <div className="flex flex-wrap gap-2 justify-center bg-slate-800 p-3 rounded">
+                              <SimpleEquipSlot item={selectedUser.equipment?.helmet} icon={Crown} />
+                              <SimpleEquipSlot item={selectedUser.equipment?.armor} icon={Shield} />
+                              <SimpleEquipSlot item={selectedUser.equipment?.gloves} icon={Hand} />
+                              <SimpleEquipSlot item={selectedUser.equipment?.boots} icon={Footprints} />
+                              <SimpleEquipSlot item={selectedUser.equipment?.weapon} icon={Sword} />
+                              <SimpleEquipSlot item={selectedUser.equipment?.shield} icon={Shield} />
+                          </div>
+                      </div>
+
+                      {/* Message Input */}
+                      <div className="pt-4 border-t border-slate-800">
+                          <label className="text-xs font-bold text-slate-400 mb-1 block">Özel Mesaj</label>
+                          <div className="flex gap-2">
+                              <input 
+                                type="text"
+                                className="flex-1 bg-slate-800 border border-slate-700 rounded px-3 text-sm text-white focus:border-indigo-500 outline-none"
+                                placeholder="Mesajını yaz..."
+                                value={msgContent}
+                                onChange={e => setMsgContent(e.target.value)}
+                              />
+                              <button 
+                                onClick={handleSendMessage}
+                                disabled={!msgContent || msgSent}
+                                className={`px-4 py-2 rounded text-white font-bold text-xs transition-colors ${msgSent ? 'bg-green-600' : 'bg-indigo-600 hover:bg-indigo-500'}`}
+                              >
+                                  {msgSent ? 'Gönderildi' : <MessageCircle size={16}/>}
+                              </button>
+                          </div>
+                          {msgError && <p className="text-xs text-red-500 mt-1">{msgError}</p>}
+                      </div>
+
                   </div>
               </div>
           </div>

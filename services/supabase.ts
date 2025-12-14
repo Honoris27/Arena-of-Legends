@@ -1,6 +1,6 @@
 
 import { createClient } from '@supabase/supabase-js';
-import { Player, RankEntry, Enemy } from '../types';
+import { Player, RankEntry, Enemy, Message } from '../types';
 
 const SUPABASE_URL = 'https://cjubtpdwxczahrwvkziv.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqdWJ0cGR3eGN6YWhyd3Zreml2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU3MDczNzgsImV4cCI6MjA4MTI4MzM3OH0.TSGlGqJWF_5c4GlXXbe5PSXOgrVdEZPIwJsd4P4T6po';
@@ -121,13 +121,14 @@ export const fetchLeaderboard = async (): Promise<RankEntry[]> => {
     try {
         const { data, error } = await supabase
             .from('profiles')
-            .select('name, level, wins, honor, victory_points, avatar_url, data')
+            .select('id, name, level, wins, honor, victory_points, avatar_url, data')
             .order('wins', { ascending: false })
             .limit(20);
 
         if (error) throw error;
 
         return data.map((entry: any, index: number) => ({
+            id: entry.id, // Ensure ID is passed for messaging/attacks
             rank: index + 1,
             name: entry.name,
             level: entry.level,
@@ -136,7 +137,8 @@ export const fetchLeaderboard = async (): Promise<RankEntry[]> => {
             victoryPoints: entry.victory_points || 0,
             avatar: entry.avatar_url,
             bio: entry.data?.bio,
-            stats: entry.data?.stats
+            stats: entry.data?.stats,
+            equipment: entry.data?.equipment // Pass equipment for inspection
         }));
     } catch (err) {
         console.error('Error fetching leaderboard:', err);
@@ -175,5 +177,44 @@ export const fetchPvpOpponents = async (minLevel: number, maxLevel: number, curr
     } catch (err) {
         console.error("Error fetching PvP opponents:", err);
         return [];
+    }
+};
+
+export const sendMessage = async (senderName: string, recipientId: string, subject: string, content: string): Promise<boolean> => {
+    try {
+        // 1. Fetch current recipient data
+        const recipient = await loadPlayerProfile(recipientId);
+        if(!recipient) return false;
+
+        // 2. Create message object
+        const newMessage: Message = {
+            id: Date.now().toString() + Math.random().toString(),
+            sender: senderName,
+            subject: subject,
+            content: content,
+            timestamp: Date.now(),
+            read: false
+        };
+
+        // 3. Append to messages
+        const updatedMessages = [...recipient.messages, newMessage];
+        const updatedData = { ...recipient, messages: updatedMessages };
+
+        // 4. Update recipient profile in DB
+        // We use savePlayerProfile logic but targeting the recipient
+        // NOTE: In a real app with strict RLS, this would require a server function. 
+        // Here we assume open write for demo or use a dedicated RPC if available.
+        // Assuming public.profiles policy allows update.
+        const { error } = await supabase
+            .from('profiles')
+            .update({ data: updatedData })
+            .eq('id', recipientId);
+
+        if(error) throw error;
+        return true;
+
+    } catch (e) {
+        console.error("Error sending message:", e);
+        return false;
     }
 };
