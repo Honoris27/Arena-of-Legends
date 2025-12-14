@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.API_KEY;
@@ -34,11 +35,12 @@ export const generateExpeditionStory = async (location: string, outcome: 'succes
 };
 
 export const generateEnemyNameAndDescription = async (level: number): Promise<{ name: string, description: string }> => {
-  if (!ai) return { name: `Vahşi Savaşçı (Seviye ${level})`, description: "Tehlikeli görünen bir rakip." };
+  if (!ai) return { name: `Vahşi Yaratık (Seviye ${level})`, description: "Tehlikeli görünen bir canavar." };
 
   try {
     const prompt = `
-      Fantastik bir gladyatör arenası için seviye ${level} gücünde bir düşman ismi ve çok kısa (1 cümle) fiziksel tasviri oluştur.
+      Fantastik bir zindan RPG oyunu için seviye ${level} gücünde bir canavar/yaratık ismi (Ork, Goblin, İskelet, Trolle vb.) ve çok kısa (1 cümle) fiziksel tasviri oluştur.
+      Bu bir insan veya oyuncu olmamalı, bir canavar olmalı.
       JSON formatında döndür: { "name": "...", "description": "..." }.
       Sadece JSON döndür.
     `;
@@ -57,6 +59,6 @@ export const generateEnemyNameAndDescription = async (level: number): Promise<{ 
     return JSON.parse(text);
   } catch (error) {
     console.error("Gemini Error:", error);
-    return { name: `Arena Gladyatörü (S${level})`, description: "Gözleri ateş saçan bir savaşçı." };
+    return { name: `Zindan Yaratığı (S${level})`, description: "Karanlıkta parlayan gözleri var." };
   }
 };

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Mail, ShieldAlert, Megaphone, X, MessageSquare, Trash2, Check, Clock } from 'lucide-react';
+import { Mail, ShieldAlert, Megaphone, X, MessageSquare, Trash2, Check, Clock, CheckSquare, Square } from 'lucide-react';
 import { Player, Message, CombatReport, Announcement } from '../types';
 import { formatTime } from '../services/gameLogic';
 
@@ -10,17 +10,67 @@ interface MailboxProps {
     player: Player;
     onDeleteMessage: (id: string) => void;
     onDeleteReport: (id: string) => void;
+    onBatchDeleteMessages: (ids: string[]) => void;
+    onBatchDeleteReports: (ids: string[]) => void;
     announcements: Announcement[];
 }
 
-const Mailbox: React.FC<MailboxProps> = ({ isOpen, onClose, player, onDeleteMessage, onDeleteReport, announcements }) => {
+const Mailbox: React.FC<MailboxProps> = ({ 
+    isOpen, onClose, player, 
+    onDeleteMessage, onDeleteReport, 
+    onBatchDeleteMessages, onBatchDeleteReports,
+    announcements 
+}) => {
     const [activeTab, setActiveTab] = useState<'messages' | 'reports' | 'announcements'>('messages');
     const [selectedReport, setSelectedReport] = useState<CombatReport | null>(null);
+    const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
 
     if (!isOpen) return null;
 
     const formatDate = (ts: number) => {
         return new Date(ts).toLocaleString('tr-TR', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' });
+    };
+
+    const toggleSelect = (id: string) => {
+        const newSet = new Set(selectedItems);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedItems(newSet);
+    };
+
+    const toggleSelectAll = () => {
+        if (activeTab === 'messages') {
+            if (selectedItems.size === player.messages.length) setSelectedItems(new Set());
+            else setSelectedItems(new Set(player.messages.map(m => m.id)));
+        } else if (activeTab === 'reports') {
+            if (selectedItems.size === player.reports.length) setSelectedItems(new Set());
+            else setSelectedItems(new Set(player.reports.map(r => r.id)));
+        }
+    };
+
+    const handleDeleteSelected = () => {
+        if (selectedItems.size === 0) return;
+        if (confirm(`${selectedItems.size} öğeyi silmek istediğine emin misin?`)) {
+            if (activeTab === 'messages') onBatchDeleteMessages(Array.from(selectedItems));
+            else if (activeTab === 'reports') onBatchDeleteReports(Array.from(selectedItems));
+            setSelectedItems(new Set());
+            setSelectedReport(null);
+        }
+    };
+
+    const handleDeleteAll = () => {
+        if (activeTab === 'messages' && player.messages.length > 0) {
+            if (confirm("TÜM mesajları silmek istediğine emin misin?")) {
+                onBatchDeleteMessages(player.messages.map(m => m.id));
+                setSelectedItems(new Set());
+            }
+        } else if (activeTab === 'reports' && player.reports.length > 0) {
+            if (confirm("TÜM raporları silmek istediğine emin misin?")) {
+                onBatchDeleteReports(player.reports.map(r => r.id));
+                setSelectedItems(new Set());
+                setSelectedReport(null);
+            }
+        }
     };
 
     return (
@@ -38,24 +88,39 @@ const Mailbox: React.FC<MailboxProps> = ({ isOpen, onClose, player, onDeleteMess
                 {/* Tabs */}
                 <div className="flex bg-slate-800/50 border-b border-slate-700">
                     <button 
-                        onClick={() => setActiveTab('messages')}
+                        onClick={() => { setActiveTab('messages'); setSelectedItems(new Set()); setSelectedReport(null); }}
                         className={`flex-1 py-3 flex items-center justify-center gap-2 text-sm font-bold transition-colors ${activeTab === 'messages' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'}`}
                     >
                         <MessageSquare size={16} /> Mesajlar ({player.messages.length})
                     </button>
                     <button 
-                        onClick={() => setActiveTab('reports')}
+                        onClick={() => { setActiveTab('reports'); setSelectedItems(new Set()); setSelectedReport(null); }}
                         className={`flex-1 py-3 flex items-center justify-center gap-2 text-sm font-bold transition-colors ${activeTab === 'reports' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'}`}
                     >
-                        <ShieldAlert size={16} /> Savaş Raporları ({player.reports.length})
+                        <ShieldAlert size={16} /> Raporlar ({player.reports.length})
                     </button>
                     <button 
-                        onClick={() => setActiveTab('announcements')}
+                        onClick={() => { setActiveTab('announcements'); setSelectedItems(new Set()); setSelectedReport(null); }}
                         className={`flex-1 py-3 flex items-center justify-center gap-2 text-sm font-bold transition-colors ${activeTab === 'announcements' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700'}`}
                     >
                         <Megaphone size={16} /> Duyurular
                     </button>
                 </div>
+
+                {/* Bulk Actions Toolbar */}
+                {(activeTab === 'messages' || activeTab === 'reports') && (
+                    <div className="bg-slate-800 p-2 flex gap-2 items-center border-b border-slate-700">
+                        <button onClick={toggleSelectAll} className="px-3 py-1 bg-slate-700 hover:bg-slate-600 rounded text-xs text-white flex items-center gap-2">
+                            <CheckSquare size={14} /> Tümünü Seç
+                        </button>
+                        <button onClick={handleDeleteSelected} disabled={selectedItems.size === 0} className="px-3 py-1 bg-red-900/50 hover:bg-red-800 text-red-200 disabled:opacity-50 rounded text-xs flex items-center gap-2">
+                            <Trash2 size={14} /> Seçilileri Sil ({selectedItems.size})
+                        </button>
+                        <button onClick={handleDeleteAll} className="px-3 py-1 bg-red-900 hover:bg-red-800 text-white rounded text-xs flex items-center gap-2 ml-auto">
+                            <Trash2 size={14} /> Tümünü Sil
+                        </button>
+                    </div>
+                )}
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto bg-slate-900/50 p-4">
@@ -67,13 +132,23 @@ const Mailbox: React.FC<MailboxProps> = ({ isOpen, onClose, player, onDeleteMess
                                 <div className="text-center text-slate-500 mt-10">Hiç mesajın yok.</div>
                             ) : (
                                 player.messages.slice().reverse().map(msg => (
-                                    <div key={msg.id} className="bg-slate-800 border border-slate-700 p-4 rounded-lg relative hover:bg-slate-800/80 transition-colors">
-                                        <div className="flex justify-between mb-2">
-                                            <span className="font-bold text-yellow-500">{msg.sender}</span>
-                                            <span className="text-xs text-slate-500">{formatDate(msg.timestamp)}</span>
+                                    <div key={msg.id} className={`bg-slate-800 border ${selectedItems.has(msg.id) ? 'border-indigo-500 bg-indigo-900/20' : 'border-slate-700'} p-4 rounded-lg relative hover:bg-slate-800/80 transition-colors`}>
+                                        <div className="absolute top-4 left-4">
+                                            <div 
+                                                onClick={() => toggleSelect(msg.id)}
+                                                className={`w-5 h-5 border rounded cursor-pointer flex items-center justify-center ${selectedItems.has(msg.id) ? 'bg-indigo-600 border-indigo-600' : 'border-slate-500 hover:border-white'}`}
+                                            >
+                                                {selectedItems.has(msg.id) && <Check size={12} className="text-white"/>}
+                                            </div>
                                         </div>
-                                        <h4 className="font-bold text-white mb-1">{msg.subject}</h4>
-                                        <p className="text-slate-300 text-sm">{msg.content}</p>
+                                        <div className="pl-10">
+                                            <div className="flex justify-between mb-2">
+                                                <span className="font-bold text-yellow-500">{msg.sender}</span>
+                                                <span className="text-xs text-slate-500">{formatDate(msg.timestamp)}</span>
+                                            </div>
+                                            <h4 className="font-bold text-white mb-1">{msg.subject}</h4>
+                                            <p className="text-slate-300 text-sm">{msg.content}</p>
+                                        </div>
                                         <button 
                                             onClick={() => onDeleteMessage(msg.id)}
                                             className="absolute bottom-2 right-2 p-2 text-slate-600 hover:text-red-500"
@@ -98,12 +173,20 @@ const Mailbox: React.FC<MailboxProps> = ({ isOpen, onClose, player, onDeleteMess
                                         <div 
                                             key={rep.id} 
                                             onClick={() => setSelectedReport(rep)}
-                                            className={`p-3 rounded border cursor-pointer transition-colors ${
+                                            className={`p-3 pl-10 relative rounded border cursor-pointer transition-colors ${
                                                 selectedReport?.id === rep.id 
                                                 ? 'bg-indigo-900/30 border-indigo-500' 
-                                                : 'bg-slate-800 border-slate-700 hover:border-slate-500'
+                                                : selectedItems.has(rep.id) ? 'bg-slate-800 border-indigo-500' : 'bg-slate-800 border-slate-700 hover:border-slate-500'
                                             }`}
                                         >
+                                            <div className="absolute top-3 left-3" onClick={(e) => { e.stopPropagation(); toggleSelect(rep.id); }}>
+                                                <div 
+                                                    className={`w-4 h-4 border rounded cursor-pointer flex items-center justify-center ${selectedItems.has(rep.id) ? 'bg-indigo-600 border-indigo-600' : 'border-slate-500 hover:border-white'}`}
+                                                >
+                                                    {selectedItems.has(rep.id) && <Check size={10} className="text-white"/>}
+                                                </div>
+                                            </div>
+
                                             <div className="flex justify-between items-start">
                                                 <span className={`font-bold text-sm ${rep.outcome === 'victory' ? 'text-green-400' : 'text-red-400'}`}>
                                                     {rep.outcome === 'victory' ? 'ZAFER' : 'YENİLGİ'}
@@ -117,7 +200,7 @@ const Mailbox: React.FC<MailboxProps> = ({ isOpen, onClose, player, onDeleteMess
                                 )}
                             </div>
 
-                            {/* Report Details (Right side or overlay on mobile) */}
+                            {/* Report Details */}
                             {selectedReport && (
                                 <div className="flex-[2] bg-slate-950 border border-slate-700 rounded p-6 overflow-y-auto relative h-full">
                                     <button 

@@ -125,6 +125,7 @@ export const calculateDamage = (attackerStats: Stats, defenderStats: Stats): num
   return Math.floor(damage);
 };
 
+// PVE MONSTER GENERATOR
 export const generateEnemy = (playerLevel: number, isBoss: boolean = false): Enemy => {
   const levelVariation = isBoss ? 5 : Math.floor(Math.random() * 3) - 1; 
   const level = Math.max(1, playerLevel + levelVariation);
@@ -142,13 +143,17 @@ export const generateEnemy = (playerLevel: number, isBoss: boolean = false): Ene
 
   const maxHp = calculateMaxHp(stats.VIT, level) * (isBoss ? 3 : 1);
 
+  const monsterNames = ["Vahşi Goblin", "Karanlık Ork", "Zindan İskeleti", "Mağara Örümceği", "Kayıp Ruh", "Taş Golem", "Kuduz Kurt", "Hırsız Kobold"];
+  const bossNames = ["MAĞARA EJDERHASI", "KRAL ORK", "ÖLÜMSÜZ LICH", "DEV GOLEM"];
+
   return {
-    name: isBoss ? "MAĞARA EJDERHASI (BOSS)" : "Bilinmeyen Düşman",
+    name: isBoss ? bossNames[Math.floor(Math.random() * bossNames.length)] : monsterNames[Math.floor(Math.random() * monsterNames.length)],
     level,
     stats,
     maxHp,
     hp: maxHp,
-    isBoss
+    isBoss,
+    isPlayer: false // IMPORTANT for PvE
   };
 };
 

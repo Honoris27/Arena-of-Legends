@@ -182,11 +182,7 @@ export const fetchPvpOpponents = async (minLevel: number, maxLevel: number, curr
 
 export const sendMessage = async (senderName: string, recipientId: string, subject: string, content: string): Promise<boolean> => {
     try {
-        // 1. Fetch current recipient data
-        const recipient = await loadPlayerProfile(recipientId);
-        if(!recipient) return false;
-
-        // 2. Create message object
+        // Create message object
         const newMessage: Message = {
             id: Date.now().toString() + Math.random().toString(),
             sender: senderName,
@@ -196,21 +192,16 @@ export const sendMessage = async (senderName: string, recipientId: string, subje
             read: false
         };
 
-        // 3. Append to messages
-        const updatedMessages = [...recipient.messages, newMessage];
-        const updatedData = { ...recipient, messages: updatedMessages };
+        // Use RPC function to bypass RLS for appending messages
+        const { error } = await supabase.rpc('send_message', {
+            recipient_id: recipientId,
+            message_obj: newMessage
+        });
 
-        // 4. Update recipient profile in DB
-        // We use savePlayerProfile logic but targeting the recipient
-        // NOTE: In a real app with strict RLS, this would require a server function. 
-        // Here we assume open write for demo or use a dedicated RPC if available.
-        // Assuming public.profiles policy allows update.
-        const { error } = await supabase
-            .from('profiles')
-            .update({ data: updatedData })
-            .eq('id', recipientId);
-
-        if(error) throw error;
+        if(error) {
+            console.error("RPC Error:", error);
+            throw error;
+        }
         return true;
 
     } catch (e) {

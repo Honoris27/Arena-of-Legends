@@ -700,6 +700,8 @@ function App() {
         player={player}
         onDeleteMessage={id => setPlayer(p => ({...p, messages: p.messages.filter(m => m.id !== id)}))}
         onDeleteReport={id => setPlayer(p => ({...p, reports: p.reports.filter(r => r.id !== id)}))}
+        onBatchDeleteMessages={ids => setPlayer(p => ({...p, messages: p.messages.filter(m => !ids.includes(m.id))}))}
+        onBatchDeleteReports={ids => setPlayer(p => ({...p, reports: p.reports.filter(r => !ids.includes(r.id))}))}
         announcements={announcements}
       />
 

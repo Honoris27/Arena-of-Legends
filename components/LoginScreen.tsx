@@ -31,7 +31,7 @@ create table if not exists public.profiles (
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Eksik kolonları ekle (Zaten varsa hata vermez)
+-- Eksik kolonları ekle
 alter table public.profiles add column if not exists honor int default 0;
 alter table public.profiles add column if not exists victory_points int default 0;
 alter table public.profiles add column if not exists piggy_bank int default 0;
@@ -41,7 +41,6 @@ alter table public.profiles add column if not exists last_income_time bigint def
 -- 2. Güvenlik Ayarları (RLS)
 alter table public.profiles enable row level security;
 
--- Politikaları yenile
 drop policy if exists "Herkes profilleri görebilir." on public.profiles;
 drop policy if exists "Kullanıcı kendi profilini ekleyebilir." on public.profiles;
 drop policy if exists "Kullanıcı kendi profilini güncelleyebilir." on public.profiles;
@@ -50,7 +49,7 @@ create policy "Herkes profilleri görebilir." on public.profiles for select usin
 create policy "Kullanıcı kendi profilini ekleyebilir." on public.profiles for insert with check (auth.uid() = id);
 create policy "Kullanıcı kendi profilini güncelleyebilir." on public.profiles for update using (auth.uid() = id);
 
--- 3. Yeni Üye Fonksiyonu (TÜM KOLONLARLA)
+-- 3. Yeni Üye Fonksiyonu
 create or replace function public.handle_new_user()
 returns trigger as $$
 begin
@@ -65,7 +64,7 @@ begin
     1,
     50,
     0,
-    0, 0, 0, 9999, 0, -- Varsayılan değerler
+    0, 0, 0, 9999, 0,
     jsonb_build_object(
       'stats', jsonb_build_object('STR', 10, 'AGI', 5, 'VIT', 10, 'INT', 5, 'LUK', 5),
       'statPoints', 0,
@@ -84,11 +83,38 @@ begin
 end;
 $$ language plpgsql security definer;
 
--- 4. Tetikleyiciyi Yenile
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute procedure public.handle_new_user();`;
+  for each row execute procedure public.handle_new_user();
+
+-- 4. GÜVENLİ MESAJLAŞMA FONKSİYONU (YENİ)
+-- Bu fonksiyon, RLS kurallarını atlayarak (security definer) bir kullanıcının
+-- başka bir kullanıcının 'messages' verisini güncellemesini sağlar.
+create or replace function public.send_message(recipient_id uuid, message_obj jsonb)
+returns void language plpgsql security definer as $$
+declare
+  current_data jsonb;
+begin
+  -- Alıcının mevcut datasını çek
+  select data into current_data from public.profiles where id = recipient_id;
+  
+  -- Eğer data yoksa veya messages dizisi yoksa oluştur ve ekle
+  if current_data is null then
+     return; -- Kullanıcı yoksa çık
+  end if;
+
+  -- Messages array'ine yeni mesajı ekle
+  update public.profiles
+  set data = jsonb_set(
+    current_data,
+    '{messages}',
+    coalesce(current_data->'messages', '[]'::jsonb) || message_obj
+  )
+  where id = recipient_id;
+end;
+$$;
+`;
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [isRegister, setIsRegister] = useState(false);
@@ -100,7 +126,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   
-  // SQL Modal State
   const [showSql, setShowSql] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -155,11 +180,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Ambience */}
       <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=2574&auto=format&fit=crop')] bg-cover bg-center opacity-20"></div>
       <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent"></div>
 
-      {/* SQL Button */}
       <button 
         onClick={() => setShowSql(true)}
         className="absolute top-4 right-4 z-50 flex items-center gap-2 bg-slate-800/80 backdrop-blur border border-slate-600 px-3 py-2 rounded-lg text-slate-300 hover:text-white hover:border-yellow-500 transition-all text-sm font-bold shadow-lg"
@@ -168,14 +191,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         DB Kurulumu
       </button>
 
-      {/* Main Login Card */}
       <div className="relative z-10 w-full max-w-md bg-slate-900/80 backdrop-blur-md border border-slate-700 rounded-2xl shadow-2xl p-8 animate-fade-in">
         <div className="text-center mb-8">
             <h1 className="text-4xl cinzel font-bold bg-gradient-to-r from-yellow-500 to-amber-700 bg-clip-text text-transparent mb-2">Arena of Legends</h1>
             <p className="text-slate-400 text-sm">Efsaneni yazmaya başla.</p>
         </div>
 
-        {/* Tabs */}
         <div className="flex mb-6 bg-slate-800 rounded-lg p-1">
             <button 
                 onClick={() => { setIsRegister(false); setError(null); setSuccess(null); }}
@@ -192,13 +213,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-            
             {error && (
                 <div className="bg-red-900/50 border border-red-500/50 text-red-200 text-xs p-3 rounded flex items-center gap-2">
                     <AlertCircle size={16} /> {error}
                 </div>
             )}
-
             {success && (
                 <div className="bg-green-900/50 border border-green-500/50 text-green-200 text-xs p-3 rounded flex items-center gap-2">
                     <CheckCircle size={16} /> {success}
@@ -210,10 +229,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 <div className="relative">
                     <Mail className="absolute left-3 top-3 text-slate-500" size={18} />
                     <input 
-                        type="email" 
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
                         className="w-full bg-slate-800 border border-slate-600 rounded-lg py-2.5 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-yellow-500 transition-colors"
                         placeholder="ornek@email.com"
                     />
@@ -225,11 +241,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                 <div className="relative">
                     <Lock className="absolute left-3 top-3 text-slate-500" size={18} />
                     <input 
-                        type="password"
-                        required
-                        minLength={6}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)}
                         className="w-full bg-slate-800 border border-slate-600 rounded-lg py-2.5 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-yellow-500 transition-colors"
                         placeholder="••••••"
                     />
@@ -243,24 +255,18 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                     <div className="relative">
                         <User className="absolute left-3 top-3 text-slate-500" size={18} />
                         <input 
-                            type="text" 
-                            required
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
+                            type="text" required value={name} onChange={(e) => setName(e.target.value)}
                             className="w-full bg-slate-800 border border-slate-600 rounded-lg py-2.5 pl-10 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-yellow-500 transition-colors"
                             placeholder="Adını gir..."
                         />
                     </div>
                 </div>
-
                 <div className="space-y-2">
                     <label className="block text-xs font-bold text-slate-400 mb-1 uppercase">Avatar Seç</label>
                     <div className="flex justify-between gap-2">
                         {AVATARS.map((av, idx) => (
                             <button
-                                key={idx}
-                                type="button"
-                                onClick={() => setSelectedAvatar(av)}
+                                key={idx} type="button" onClick={() => setSelectedAvatar(av)}
                                 className={`w-12 h-12 rounded-full border-2 overflow-hidden transition-all ${selectedAvatar === av ? 'border-yellow-500 scale-110 shadow-lg shadow-yellow-500/20' : 'border-slate-700 opacity-50 hover:opacity-100'}`}
                             >
                                 <img src={av} alt="avatar" className="w-full h-full object-cover" />
@@ -272,8 +278,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             )}
 
             <button 
-                type="submit"
-                disabled={loading}
+                type="submit" disabled={loading}
                 className={`w-full py-3 rounded-lg font-bold flex items-center justify-center gap-2 mt-6 transition-all ${
                     !loading 
                     ? 'bg-gradient-to-r from-yellow-600 to-amber-600 hover:from-yellow-500 hover:to-amber-500 text-white shadow-lg shadow-amber-900/30 transform hover:-translate-y-0.5' 
@@ -285,7 +290,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
         </form>
       </div>
 
-      {/* SQL MODAL */}
       {showSql && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 animate-fade-in">
               <div className="bg-slate-900 border border-slate-600 rounded-xl w-full max-w-2xl h-[80vh] flex flex-col shadow-2xl">
@@ -301,7 +305,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
                       <textarea 
                         readOnly 
                         value={SQL_SETUP_CODE} 
-                        className="w-full h-full bg-slate-950 text-green-400 font-mono text-xs p-4 rounded border border-slate-700 resize-none focus:outline-none custom-scrollbar"
+                        className="w-full h-full bg-slate-950 text-blue-400 font-mono text-xs p-4 rounded border border-slate-700 resize-none focus:outline-none custom-scrollbar"
                       />
                   </div>
 
