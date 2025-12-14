@@ -1,4 +1,5 @@
 
+
 export type StatType = 'STR' | 'AGI' | 'VIT' | 'INT' | 'LUK';
 
 export interface Stats {
@@ -271,4 +272,11 @@ export interface Toast {
     message: string;
     type: 'success' | 'error' | 'info' | 'loot';
     duration?: number;
+}
+
+export interface ArenaBattleState {
+    enemy: Enemy | null;
+    logs: string[];
+    isFighting: boolean;
+    round: number;
 }

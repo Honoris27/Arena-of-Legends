@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Player, StatType, Equipment, Item, ItemRarity, ItemType } from '../types';
 import { calculateMaxXp, getPlayerTotalStats, calculateSellPrice, canEquipItem } from '../services/gameLogic';
@@ -92,11 +93,12 @@ interface InventoryItemProps {
     item: DisplayItem;
     isSelected: boolean;
     onClick: () => void;
+    onDoubleClick: () => void;
     onHover: (i: Item) => void;
     onLeave: () => void;
 }
 
-const InventoryItem: React.FC<InventoryItemProps> = ({ item, isSelected, onClick, onHover, onLeave }) => {
+const InventoryItem: React.FC<InventoryItemProps> = ({ item, isSelected, onClick, onDoubleClick, onHover, onLeave }) => {
     const Icon = TYPE_ICONS[item.type] || Shield;
     
     return (
@@ -106,6 +108,7 @@ const InventoryItem: React.FC<InventoryItemProps> = ({ item, isSelected, onClick
                 ${isSelected ? 'border-yellow-500 bg-slate-700 shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'border-slate-700 bg-slate-800 hover:border-slate-500'}
             `}
             onClick={onClick}
+            onDoubleClick={onDoubleClick}
             onMouseEnter={() => onHover(item)}
             onMouseLeave={onLeave}
         >
@@ -244,6 +247,15 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
       if(realItem) onEquip(realItem);
       setSelectedInventoryItem(null);
   }
+
+  // --- DOUBLE CLICK HANDLER ---
+  const handleItemDoubleClick = (item: DisplayItem) => {
+      if (['weapon', 'shield', 'armor', 'helmet', 'gloves', 'boots', 'ring', 'necklace', 'earring', 'belt'].includes(item.type)) {
+          handleSingleEquip(item);
+      } else if (item.type === 'consumable' || item.type === 'scroll') {
+          handleBatchUse(item);
+      }
+  };
 
 
   return (
@@ -400,6 +412,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
                                 item={item}
                                 isSelected={selectedInventoryItem?.name === item.name && selectedInventoryItem?.rarity === item.rarity}
                                 onClick={() => setSelectedInventoryItem(item)}
+                                onDoubleClick={() => handleItemDoubleClick(item)}
                                 onHover={setHoveredItem}
                                 onLeave={() => setHoveredItem(null)}
                               />
@@ -472,7 +485,7 @@ const CharacterProfile: React.FC<CharacterProfileProps> = ({ player, onUpgradeSt
              </div>
           ) : (
             <div className="bg-slate-800/30 border border-slate-700 border-dashed rounded-xl p-4 text-center text-slate-500 text-xs h-[84px] flex items-center justify-center">
-                İşlem yapmak için çantadan bir eşya seçin.
+                İşlem yapmak için çantadan bir eşya seçin. (Hızlı işlem için çift tıkla)
             </div>
           )}
       </div>

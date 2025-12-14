@@ -1,9 +1,10 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Player, StatType, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, Toast, BlacksmithJob, ItemRarity, ItemType, GameEvent, GlobalConfig, CombatReport } from './types';
-import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus, INITIAL_MARKET_ITEMS, DEFAULT_GLOBAL_CONFIG, formatTime } from './services/gameLogic';
+import { Player, Item, Equipment, ExpeditionLocation, MarketItem, Region, Announcement, EnemyTemplate, BaseItem, ItemMaterial, ItemModifier, Toast, BlacksmithJob, ItemRarity, ItemType, GameEvent, GlobalConfig, CombatReport, ArenaBattleState, Enemy } from './types';
+import { calculateMaxHp, calculateMaxXp, calculateMaxMp, calculateSellPrice, upgradeItem, getExpeditionConfig, canEquipItem, generateDynamicItem, generateScroll, generateFragment, addToInventory, removeFromInventory, INITIAL_BASE_ITEMS, INITIAL_MATERIALS, INITIAL_MODIFIERS, calculateSalvageReturn, checkEventStatus, INITIAL_MARKET_ITEMS, DEFAULT_GLOBAL_CONFIG, formatTime, generateEnemy, calculateDamage } from './services/gameLogic';
 import { supabase, savePlayerProfile, loadPlayerProfile } from './services/supabase';
-import { generateExpeditionStory } from './services/geminiService';
+import { generateExpeditionStory, generateEnemyNameAndDescription } from './services/geminiService';
 import CharacterProfile from './components/CharacterProfile';
 import Expedition from './components/Expedition';
 import Arena from './components/Arena';
@@ -38,7 +39,7 @@ const DEFAULT_PLAYER_TEMPLATE: Player = {
   maxXp: 100,
   gold: 50,
   stats: { STR: 10, AGI: 5, VIT: 10, INT: 5, LUK: 5 },
-  statPoints: 5,
+  statPoints: 0,
   hp: 120, maxHp: 120, mp: 50, maxMp: 50,
   avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Spartacus",
   equipment: { weapon: null, shield: null, helmet: null, armor: null, gloves: null, boots: null, necklace: null, ring: null, earring: null, belt: null },
@@ -47,7 +48,7 @@ const DEFAULT_PLAYER_TEMPLATE: Player = {
   maxExpeditionPoints: 15,
   nextPointRegenTime: Date.now() + (15 * 60 * 1000), 
   nextExpeditionTime: 0,
-  activeExpedition: null, // New field for persistence
+  activeExpedition: null, 
   premiumUntil: 0,
   messages: [],
   reports: [],
@@ -76,6 +77,14 @@ function App() {
   const [enemyTemplates, setEnemyTemplates] = useState<EnemyTemplate[]>([]);
   const [activeEvent, setActiveEvent] = useState<GameEvent | null>(null);
   
+  // Arena State (Lifted Up)
+  const [arenaBattle, setArenaBattle] = useState<ArenaBattleState>({
+      enemy: null,
+      logs: [],
+      isFighting: false,
+      round: 0
+  });
+
   // Game Data State
   const [baseItems, setBaseItems] = useState<BaseItem[]>(INITIAL_BASE_ITEMS);
   const [materials, setMaterials] = useState<ItemMaterial[]>(INITIAL_MATERIALS);
@@ -112,18 +121,38 @@ function App() {
 
   const initPlayer = async (user: any) => {
       setLoading(true);
+      const localKey = `aol_save_${user.id}`;
+      let loadedFromLocal = false;
+
+      // 1. Try LocalStorage FIRST (Fastest, prevents reset feeling)
+      const localData = localStorage.getItem(localKey);
+      if (localData) {
+          try {
+              const parsed = JSON.parse(localData);
+              if (parsed && parsed.id === user.id) {
+                  setPlayer(prev => ({ ...DEFAULT_PLAYER_TEMPLATE, ...parsed }));
+                  loadedFromLocal = true;
+                  setLoading(false); // Unblock UI immediately
+              }
+          } catch (e) { console.error("Local load fail", e); }
+      }
+
+      // 2. Try Supabase (Source of Truth)
       const profile = await loadPlayerProfile(user.id);
       
       if (profile) {
-          setPlayer(prev => ({
+          // Merge logic: ensure we don't overwrite with stale local data if DB is newer
+          const merged = {
               ...DEFAULT_PLAYER_TEMPLATE,
               ...profile,
-              equipment: { ...DEFAULT_PLAYER_TEMPLATE.equipment, ...profile.equipment },
-              inventory: profile.inventory || [],
-              blacksmithQueue: profile.blacksmithQueue || []
-          }));
-      } else {
-          // Initialize New Player
+              // Keep existing equipment structure
+              equipment: { ...DEFAULT_PLAYER_TEMPLATE.equipment, ...profile.equipment }
+          };
+          setPlayer(merged);
+          // Sync DB back to local
+          localStorage.setItem(localKey, JSON.stringify(merged));
+      } else if (!loadedFromLocal) {
+          // Initialize New Player (No Local, No DB)
           const meta = user.user_metadata;
           const startingItems: Item[] = globalConfig.startingInventory.map(baseId => {
               const base = baseItems.find(b => b.id === baseId);
@@ -143,6 +172,8 @@ function App() {
               inventory: startingItems
           };
           setPlayer(newPlayer);
+          // Save initially
+          localStorage.setItem(localKey, JSON.stringify(newPlayer));
           await savePlayerProfile(newPlayer, 0);
       }
       setLoading(false);
@@ -162,22 +193,8 @@ function App() {
 
         setPlayer(prev => {
             // 1. Process Active Expedition
-            if (prev.activeExpedition && now >= prev.activeExpedition.endTime) {
-                // Determine Success (Logic moved here from frontend)
-                // Assuming success for simplicity or add RNG check based on level/stats
-                const success = prev.hp > 0; // Simplified
-                
-                // Trigger resolution logic
-                // We cannot use async/await here easily inside setState, 
-                // so we will just mark it null here and trigger a side effect or 
-                // call a function that handles the logic and updates state.
-                
-                // To avoid complex state updates in loop, we'll flag it to be resolved.
-                // However, better approach: Check condition, if met, call a handler function OUTSIDE this setPlayer.
-                // But setPlayer is the only way to get 'prev'.
-                // Strategy: Just handle Regen here. Handle completion in a separate check below.
-            }
-
+            // Logic handled in checkCompletion effect
+            
             // 2. Regen Points
             const config = getExpeditionConfig(prev, activeEvent);
             let updated = { ...prev };
@@ -189,12 +206,107 @@ function App() {
             return updated;
         });
 
-        // Check for Expedition Completion (Side Effect free from the update above)
-        // We use the reference to 'player' state which might be stale in interval, 
-        // so we use a functional update or rely on a separate useEffect on [player.activeExpedition]
     }, 1000);
     return () => clearInterval(interval);
   }, [session, loading, activeEvent]); 
+
+  // --- ARENA BATTLE LOOP ---
+  useEffect(() => {
+      if (!arenaBattle.isFighting || !arenaBattle.enemy) return;
+
+      const battleTimer = setInterval(() => {
+          let newPlayerHp = player.hp;
+          let newEnemy = { ...arenaBattle.enemy! };
+          let newLogs = [...arenaBattle.logs];
+          let round = arenaBattle.round + 1;
+          let battleOver = false;
+
+          // Player Turn
+          const dmgToEnemy = calculateDamage(player.stats, newEnemy.stats);
+          newEnemy.hp -= dmgToEnemy;
+          newLogs.push(`Raunt ${round}: ${player.name}, ${newEnemy.name}'a ${dmgToEnemy} hasar verdi!`);
+
+          if (newEnemy.hp <= 0) {
+              battleOver = true;
+              newLogs.push(`${newEnemy.name} yere yığıldı! KAZANDIN!`);
+              
+              // Rewards
+              const goldReward = (newEnemy.level * 10) + Math.floor(Math.random() * 20);
+              const xpReward = (newEnemy.level * 20) + Math.floor(Math.random() * 10);
+              
+              setPlayer(prev => ({
+                  ...prev,
+                  gold: prev.gold + goldReward,
+                  currentXp: prev.currentXp + xpReward
+              }));
+              setWins(w => w + 1);
+              addToast(`Zafer! +${goldReward} Altın, +${xpReward} XP`, 'success');
+              
+              setArenaBattle(prev => ({ ...prev, enemy: newEnemy, logs: newLogs, isFighting: false, round }));
+              setIsBusy(false);
+          } else {
+               // Enemy Turn
+               const dmgToPlayer = calculateDamage(newEnemy.stats, player.stats);
+               newPlayerHp -= dmgToPlayer;
+               newLogs.push(`Raunt ${round}: ${newEnemy.name}, sana ${dmgToPlayer} hasar verdi!`);
+
+               if (newPlayerHp <= 0) {
+                   battleOver = true;
+                   newLogs.push(`Ağır yaralandın... KAYBETTİN.`);
+                   setPlayer(prev => ({ ...prev, hp: 1 })); // Safe death
+                   setArenaBattle(prev => ({ ...prev, enemy: newEnemy, logs: newLogs, isFighting: false, round }));
+                   setIsBusy(false);
+               } else {
+                   // Continue fight, update state
+                   setPlayer(prev => ({ ...prev, hp: newPlayerHp }));
+                   setArenaBattle(prev => ({ ...prev, enemy: newEnemy, logs: newLogs, round }));
+               }
+          }
+
+      }, 800);
+
+      return () => clearInterval(battleTimer);
+  }, [arenaBattle.isFighting, arenaBattle.enemy, player.stats, player.hp, player.name]);
+
+  // --- ARENA ACTIONS ---
+  const handleArenaSearch = async () => {
+    if (isBusy) return;
+    
+    // 1. Generate Stats Logic
+    const baseEnemy = generateEnemy(player.level);
+    
+    // 2. Enhance with AI (Name/Desc)
+    const flavor = await generateEnemyNameAndDescription(baseEnemy.level);
+    
+    setArenaBattle({
+        enemy: { ...baseEnemy, name: flavor.name, description: flavor.description },
+        logs: [],
+        isFighting: false,
+        round: 0
+    });
+  };
+
+  const handleArenaStart = () => {
+      if (!arenaBattle.enemy) return;
+      setIsBusy(true);
+      setArenaBattle(prev => ({
+          ...prev,
+          isFighting: true,
+          logs: [`${player.name} vs ${prev.enemy?.name}! Savaş başlıyor!`],
+          round: 0
+      }));
+  };
+
+  const handleArenaReset = () => {
+      if(arenaBattle.isFighting) return;
+      setArenaBattle({
+          enemy: null,
+          logs: [],
+          isFighting: false,
+          round: 0
+      });
+  };
+
 
   // --- EXPEDITION COMPLETION CHECKER ---
   useEffect(() => {
@@ -209,12 +321,16 @@ function App() {
 
       const timer = setInterval(checkCompletion, 1000);
       return () => clearInterval(timer);
-  }, [player.activeExpedition]); // Re-binds when activeExpedition changes
-
+  }, [player.activeExpedition]); 
 
   // --- SAVE LOOP ---
   useEffect(() => {
-      if (!session || loading) return;
+      if (!session || loading || !player.id) return;
+      
+      // 1. Save to LocalStorage Immediately (Sync)
+      localStorage.setItem(`aol_save_${player.id}`, JSON.stringify(player));
+
+      // 2. Save to DB (Debounced)
       if (saveTimeout.current) clearTimeout(saveTimeout.current);
       saveTimeout.current = setTimeout(() => {
           savePlayerProfile(player, wins);
@@ -235,14 +351,7 @@ function App() {
           return;
       }
 
-      // Calculate Duration
       const config = getExpeditionConfig(player, activeEvent);
-      // Simulate duration logic (e.g. 10s for testing, real game might be minutes)
-      // For this game: location.duration is multiplier of config base cooldown? 
-      // Let's use logic from previous Expedition.tsx but make it persistent.
-      // Previous: setTimeout(800ms) - That was instant combat.
-      // Let's make it a real "Idle" task. 
-      // If duration in location is 1 (multiplier), let's say base is 10 seconds for UX.
       const durationMs = (location.duration * 5000) / (activeEvent?.expeditionTimeMultiplier || 1); 
 
       const newExpedition = {
@@ -261,18 +370,17 @@ function App() {
           activeExpedition: newExpedition
       }));
       
-      // Force Save immediately to prevent state loss on refresh
-      savePlayerProfile({
+      // Force Save
+      localStorage.setItem(`aol_save_${player.id}`, JSON.stringify({
           ...player,
           expeditionPoints: player.expeditionPoints - 1,
           activeExpedition: newExpedition
-      }, wins);
+      }));
 
       addToast(`${newExpedition.locationName} seferi başladı!`, "info");
   };
 
   const resolveExpedition = async (expedition: any) => {
-      // 1. Calculate Rewards
       const evt = checkEventStatus(activeEvent);
       const xpMult = (evt && evt.isActive) ? evt.xpMultiplier : 1.0;
       const goldMult = (evt && evt.isActive) ? evt.goldMultiplier : 1.0;
@@ -283,7 +391,6 @@ function App() {
       let goldGain = Math.floor(((5 + Math.random() * 10) * expedition.rewardMultiplier) * goldMult);
       const earnedItems: Item[] = [];
 
-      // Drop Logic
       const roll = Math.random();
       if (roll < (0.25 * dropMult)) {
           const dropLvl = Math.max(1, player.level + Math.floor(Math.random() * 5) - 2);
@@ -296,14 +403,11 @@ function App() {
           else earnedItems.push(generateFragment('suffix', Math.floor(Math.random() * 2) + 1));
       }
 
-      // Damage Logic
       const dmg = Math.floor(player.maxHp * (0.05 + Math.random() * 0.1));
-      const outcome = "success"; // Simple logic for now
+      const outcome = "success";
       
-      // AI Story Generation (Optional/Background)
       const storyPromise = generateExpeditionStory(expedition.locationName, outcome, `${goldGain} Altın, ${xpGain} XP`);
 
-      // 2. Create Report
       const report: CombatReport = {
           id: Date.now().toString(),
           title: `Sefer Raporu: ${expedition.locationName}`,
@@ -315,14 +419,13 @@ function App() {
           details: [`Süre: ${formatTime(expedition.endTime - expedition.startTime)}`, `Hasar: ${dmg}`, "Sefer başarıyla tamamlandı."]
       };
 
-      // 3. Update Player State
       setPlayer(prev => {
           let newInv = [...prev.inventory];
           earnedItems.forEach(i => newInv = addToInventory(newInv, i));
           
           return {
               ...prev,
-              activeExpedition: null, // Clear active state
+              activeExpedition: null,
               currentXp: prev.currentXp + xpGain,
               gold: prev.gold + goldGain,
               inventory: newInv,
@@ -331,15 +434,8 @@ function App() {
           };
       });
 
-      // 4. Notify User
       addToast(`Sefer Tamamlandı! +${goldGain} Altın`, "loot");
       
-      // Force save to ensure rewards aren't lost if they close tab immediately
-      // Note: We use the *calculated* values, can't use 'player' state here as it's stale
-      // So we rely on the setPlayer + the debounced save, OR force save a partial update.
-      // Ideally, rely on the debounce which is 2s, but setPlayer triggers it.
-      
-      // Fetch AI story and update report later (optional)
       storyPromise.then(story => {
           setPlayer(p => ({
               ...p,
@@ -360,16 +456,12 @@ function App() {
               if (job.item) newInv = removeFromInventory(newInv, job.item.id);
           }
           
-          const newPlayer = {
+          return {
               ...prev,
               gold: prev.gold - cost,
               inventory: newInv,
               blacksmithQueue: [...prev.blacksmithQueue, job]
           };
-          
-          // Force Save
-          savePlayerProfile(newPlayer, wins);
-          return newPlayer;
       });
       addToast("İşlem sıraya alındı.", "info");
   };
@@ -385,7 +477,6 @@ function App() {
           newItem = upgradeItem(job.item);
           addToast("Eşya geliştirildi!", "success");
       } else if (job.type === 'salvage' && job.item) {
-           // Apply Event Salvage Multiplier
            const r = calculateSalvageReturn(job.item, activeEvent);
            frags = { prefix: r.prefixFrag, suffix: r.suffixFrag };
            addToast(`Kazanıldı: ${r.prefixFrag} Ön Ek, ${r.suffixFrag} Son Ek Parçası`, "success");
@@ -402,14 +493,11 @@ function App() {
               if(frags.suffix > 0) newInv = addToInventory(newInv, generateFragment('suffix', frags.suffix));
           }
           
-          const newPlayer = {
+          return {
               ...prev,
               inventory: newInv,
               blacksmithQueue: prev.blacksmithQueue.filter(j => j.id !== jobId)
           };
-          
-          savePlayerProfile(newPlayer, wins); // Force Save
-          return newPlayer;
       });
   };
 
@@ -442,7 +530,6 @@ function App() {
           setPlayer(p => ({ ...p, learnedModifiers: [...p.learnedModifiers, item.linkedModifierId!], inventory: removeFromInventory(p.inventory, item.id) }));
           addToast("Yeni özellik öğrenildi!", "success");
       } else if (item.type === 'consumable') {
-          // Placeholder for potions
           setPlayer(p => ({...p, hp: p.maxHp, inventory: removeFromInventory(p.inventory, item.id)}));
           addToast("İksir kullanıldı.", "success");
       }
@@ -453,8 +540,6 @@ function App() {
         addToast("Yetersiz altın!", "error");
         return;
     }
-    // ... (rest of market buy logic unchanged) ...
-    // Simplifying duplication here for the patch
     let newInv = [...player.inventory];
     let newHp = player.hp;
     let newPremium = player.premiumUntil;
@@ -489,7 +574,7 @@ function App() {
       <AdminPanel 
         isOpen={showAdmin} 
         onClose={() => setShowAdmin(false)}
-        currentUserRole={player.role} // Pass role to Admin Panel
+        currentUserRole={player.role}
         users={[player]} 
         onAddItemToPlayer={(id, item) => setPlayer(p => ({...p, inventory: addToInventory(p.inventory, item)}))}
         baseItems={baseItems} setBaseItems={setBaseItems}
@@ -539,7 +624,6 @@ function App() {
                 )}
             </button>
 
-             {/* Admin Panel Button: Only visible to Admin or Moderator */}
              {(player.role === 'admin' || player.role === 'moderator') && (
                  <button onClick={() => setShowAdmin(true)} className="text-slate-400 hover:text-white"><Settings size={20} /></button>
              )}
@@ -549,11 +633,11 @@ function App() {
       </header>
 
       <div className="flex max-w-7xl mx-auto h-[calc(100vh-64px-40px)] overflow-hidden"> 
-        {/* Adjusted height to account for banner if present, though banner is sticky/relative above header usually */}
         <nav className="hidden md:flex w-64 flex-col border-r border-slate-700 bg-slate-800/50 p-4 gap-2">
             {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Swords, label: 'Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
                 <button key={item.id} onClick={() => setCurrentView(item.id as View)} className={`flex items-center gap-3 p-3 rounded-lg transition-all ${currentView === item.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-700 text-slate-400'}`}>
                     <item.icon size={20} /> {item.label}
+                    {item.id === 'arena' && arenaBattle.isFighting && <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
                 </button>
             ))}
         </nav>
@@ -591,11 +675,12 @@ function App() {
             )}
             {currentView === 'arena' && (
                 <Arena 
-                    player={player} 
-                    onWin={(g, x) => { setPlayer(p => ({...p, gold: p.gold + g, currentXp: p.currentXp + x})); setWins(w => w+1); }}
-                    onLoss={() => setPlayer(p => ({...p, hp: 1}))}
-                    isBusy={isBusy} 
-                    setBusy={setIsBusy} 
+                    player={player}
+                    isBusy={isBusy}
+                    battleState={arenaBattle}
+                    onSearch={handleArenaSearch}
+                    onStart={handleArenaStart}
+                    onReset={handleArenaReset}
                 />
             )}
             {currentView === 'market' && <Market playerGold={player.gold} items={marketItems} onBuy={handleMarketBuy} />}
@@ -603,13 +688,13 @@ function App() {
         </main>
       </div>
       
-      {/* Mobile Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 w-full bg-slate-900 border-t border-slate-800 flex justify-around p-3 z-50 overflow-x-auto">
          {[User, Map, Swords, ShoppingBag, Hammer, Trophy].map((Icon, idx) => {
              const views: View[] = ['character', 'expedition', 'arena', 'market', 'blacksmith', 'leaderboard'];
              return (
-                <button key={idx} onClick={() => setCurrentView(views[idx])} className={`flex flex-col items-center gap-1 text-xs min-w-[50px] ${currentView === views[idx] ? 'text-indigo-400' : 'text-slate-500'}`}>
+                <button key={idx} onClick={() => setCurrentView(views[idx])} className={`flex flex-col items-center gap-1 text-xs min-w-[50px] ${currentView === views[idx] ? 'text-indigo-400' : 'text-slate-500'} relative`}>
                     <Icon size={20} />
+                    {views[idx] === 'arena' && arenaBattle.isFighting && <span className="absolute top-0 right-2 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
                 </button>
              );
          })}

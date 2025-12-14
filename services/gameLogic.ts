@@ -1,4 +1,5 @@
 
+
 import { Player, Enemy, Stats, Item, ItemType, ItemRarity, BaseItem, ItemMaterial, ItemModifier, StatType, ModifierBonus, GameEvent, MarketItem, GlobalConfig } from '../types';
 
 export const isPremium = (player: Player): boolean => {
@@ -235,7 +236,7 @@ export const INITIAL_MARKET_ITEMS: MarketItem[] = [
 export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
     startingLevel: 1,
     startingGold: 50,
-    startingStatPoints: 5,
+    startingStatPoints: 0,
     startingStats: { STR: 10, AGI: 5, VIT: 10, INT: 5, LUK: 5 },
     startingInventory: ['w1', 'a1'] // Start with simple sword and leather armor
 };
