@@ -299,6 +299,7 @@ export interface Toast {
 }
 
 export interface ArenaBattleState {
+    mode: 'pve' | 'pvp'; // Added mode
     enemy: Enemy | null;
     logs: string[];
     isFighting: boolean;

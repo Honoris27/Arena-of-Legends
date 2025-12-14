@@ -8,6 +8,7 @@ import { generateExpeditionStory, generateEnemyNameAndDescription } from './serv
 import CharacterProfile from './components/CharacterProfile';
 import Expedition from './components/Expedition';
 import Arena from './components/Arena';
+import PvpArena from './components/PvpArena';
 import AdminPanel from './components/AdminPanel';
 import LoginScreen from './components/LoginScreen';
 import Blacksmith from './components/Blacksmith';
@@ -18,7 +19,7 @@ import Mailbox from './components/Mailbox';
 import Bank from './components/Bank';
 import ToastSystem from './components/ToastSystem';
 import EventBanner from './components/EventBanner';
-import { User, Map, Swords, Coins, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown, Mail, Landmark } from 'lucide-react';
+import { User, Map, Swords, Coins, Settings, Hammer, Trophy, ShoppingBag, HelpCircle, LogOut, Crown, Mail, Landmark, Skull } from 'lucide-react';
 
 const INITIAL_REGIONS: Region[] = [
     { id: 'r1', name: "Karanlık Orman", minLevel: 1, description: "Acemi gladyatörlerin ilk durağı." },
@@ -64,7 +65,7 @@ const DEFAULT_PLAYER_TEMPLATE: Player = {
   blacksmithSlots: 2
 };
 
-type View = 'character' | 'expedition' | 'arena' | 'blacksmith' | 'leaderboard' | 'market' | 'bank';
+type View = 'character' | 'expedition' | 'arena' | 'pvp' | 'blacksmith' | 'leaderboard' | 'market' | 'bank';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -86,6 +87,7 @@ function App() {
   
   // Arena State (Lifted Up)
   const [arenaBattle, setArenaBattle] = useState<ArenaBattleState>({
+      mode: 'pve',
       enemy: null,
       logs: [],
       isFighting: false,
@@ -248,21 +250,22 @@ function App() {
               let vpReward = 0;
               let extraMsg = "";
 
-              if (newEnemy.isPlayer) {
-                  // PvP Rewards
+              if (arenaBattle.mode === 'pvp') {
+                  // PvP Rewards: Steal 5%, Honor, Piggy Bank
                   const stealAmount = newEnemy.gold ? Math.floor(newEnemy.gold * 0.05) : 0;
                   const piggySteal = newEnemy.piggyBank || 0;
                   goldReward = stealAmount + piggySteal;
                   xpReward = (newEnemy.level * 30);
                   honorReward = 2; // Fixed honor for win
-                  vpReward = 2; // Victory points for pvp
-
+                  
                   if(stealAmount > 0) extraMsg += ` ${stealAmount} Altın çaldın!`;
                   if(piggySteal > 0) extraMsg += ` LİDER KUMBARASINI PATLATTIN! (+${piggySteal})`;
               } else {
-                  // Mob Rewards
+                  // PvE Rewards: Gold, XP, Victory Point
                   goldReward = (newEnemy.level * 10) + Math.floor(Math.random() * 20);
                   xpReward = (newEnemy.level * 20) + Math.floor(Math.random() * 10);
+                  vpReward = 1;
+                  extraMsg = ` +${vpReward} Zafer Puanı`;
               }
               
               setPlayer(prev => ({
@@ -287,7 +290,20 @@ function App() {
                if (newPlayerHp <= 0) {
                    battleOver = true;
                    newLogs.push(`Ağır yaralandın... KAYBETTİN.`);
-                   setPlayer(prev => ({ ...prev, hp: 1 })); // Safe death
+                   setPlayer(prev => {
+                       let lossMsg = "";
+                       let newGold = prev.gold;
+                       
+                       if(arenaBattle.mode === 'pvp') {
+                           const stolen = Math.floor(prev.gold * 0.05);
+                           newGold = Math.max(0, prev.gold - stolen);
+                           lossMsg = ` ${stolen} Altın çaldırdın!`;
+                           addToast(`Yenildin!${lossMsg}`, 'error');
+                       }
+
+                       return { ...prev, hp: 1, gold: newGold };
+                   });
+                   
                    setArenaBattle(prev => ({ ...prev, enemy: newEnemy, logs: newLogs, isFighting: false, round }));
                    setIsBusy(false);
                } else {
@@ -300,24 +316,42 @@ function App() {
       }, 800);
 
       return () => clearInterval(battleTimer);
-  }, [arenaBattle.isFighting, arenaBattle.enemy, player.stats, player.hp, player.name]);
+  }, [arenaBattle.isFighting, arenaBattle.enemy, arenaBattle.mode, player.stats, player.hp, player.name]);
 
   // --- ARENA ACTIONS ---
-  const handleArenaSearch = async () => {
+  
+  // PvE Search
+  const handlePveSearch = async () => {
     if (isBusy) return;
+    const baseEnemy = generateEnemy(player.level);
+    const flavor = await generateEnemyNameAndDescription(baseEnemy.level);
     
+    setArenaBattle({
+        mode: 'pve',
+        enemy: { ...baseEnemy, name: flavor.name, description: flavor.description, isPlayer: false },
+        logs: [],
+        isFighting: false,
+        round: 0
+    });
+  };
+
+  // PvP Search
+  const handlePvpSearch = async () => {
+    if (isBusy) return;
     // Simulate finding a player (for now using generator but marking as player)
-    // In a real backend, we would fetch a random profile from Supabase with level +/- 2
+    // Mock gold to steal based on level
     const baseEnemy = generateEnemy(player.level);
     baseEnemy.isPlayer = true;
-    baseEnemy.gold = Math.floor(Math.random() * 1000) + 100; // Mock gold to steal
+    baseEnemy.gold = Math.floor(Math.random() * 1000) + 200 * player.level; 
+    
     // 5% chance to find a "Rank 1" with piggy bank
     if(Math.random() < 0.05) baseEnemy.piggyBank = Math.floor(Math.random() * 5000) + 500;
 
     const flavor = await generateEnemyNameAndDescription(baseEnemy.level);
     
     setArenaBattle({
-        enemy: { ...baseEnemy, name: flavor.name, description: flavor.description },
+        mode: 'pvp',
+        enemy: { ...baseEnemy, name: `Gladyatör ${flavor.name.split(' ')[0]}`, description: "Rakip bir oyuncu.", isPlayer: true },
         logs: [],
         isFighting: false,
         round: 0
@@ -338,6 +372,7 @@ function App() {
   const handleArenaReset = () => {
       if(arenaBattle.isFighting) return;
       setArenaBattle({
+          mode: 'pve', // Default reset
           enemy: null,
           logs: [],
           isFighting: false,
@@ -675,10 +710,10 @@ function App() {
 
       <div className="flex max-w-7xl mx-auto h-[calc(100vh-64px-40px)] overflow-hidden"> 
         <nav className="hidden md:flex w-64 flex-col border-r border-slate-700 bg-slate-800/50 p-4 gap-2">
-            {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Swords, label: 'Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'bank', icon: Landmark, label: 'Banka' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
+            {[{ id: 'character', icon: User, label: 'Karakter' }, { id: 'expedition', icon: Map, label: 'Sefer' }, { id: 'arena', icon: Skull, label: 'Arena' }, { id: 'pvp', icon: Swords, label: 'PvP Arena' }, { id: 'blacksmith', icon: Hammer, label: 'Demirci' }, { id: 'market', icon: ShoppingBag, label: 'Pazar' }, { id: 'bank', icon: Landmark, label: 'Banka' }, { id: 'leaderboard', icon: Trophy, label: 'Sıralama' }].map(item => (
                 <button key={item.id} onClick={() => setCurrentView(item.id as View)} className={`flex items-center gap-3 p-3 rounded-lg transition-all ${currentView === item.id ? 'bg-indigo-600 text-white' : 'hover:bg-slate-700 text-slate-400'}`}>
                     <item.icon size={20} /> {item.label}
-                    {item.id === 'arena' && arenaBattle.isFighting && <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
+                    {(item.id === 'arena' || item.id === 'pvp') && arenaBattle.isFighting && arenaBattle.mode === (item.id === 'arena' ? 'pve' : 'pvp') && <span className="ml-auto w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
                 </button>
             ))}
         </nav>
@@ -720,7 +755,17 @@ function App() {
                     player={player}
                     isBusy={isBusy}
                     battleState={arenaBattle}
-                    onSearch={handleArenaSearch}
+                    onSearch={handlePveSearch}
+                    onStart={handleArenaStart}
+                    onReset={handleArenaReset}
+                />
+            )}
+            {currentView === 'pvp' && (
+                <PvpArena 
+                    player={player}
+                    isBusy={isBusy}
+                    battleState={arenaBattle}
+                    onSearch={handlePvpSearch}
                     onStart={handleArenaStart}
                     onReset={handleArenaReset}
                 />
@@ -735,11 +780,11 @@ function App() {
                              amount: Math.floor(amount * 0.98), // 2% commission
                              startTime: Date.now(),
                              endTime: Date.now() + (7 * 24 * 60 * 60 * 1000), // 7 days
-                             interestRate: 0.10, // 10%
+                             interestRate: 0, // No interest
                              status: 'active' as const
                          };
                          setPlayer(p => ({ ...p, gold: p.gold - amount, bankDeposits: [...p.bankDeposits, deposit] }));
-                         addToast(`%2 komisyonla ${amount} yatırıldı.`, "success");
+                         addToast(`%2 komisyonla ${amount} kasaya kaldırıldı.`, "success");
                     }}
                     onCancelDeposit={(id) => {
                          const deposit = player.bankDeposits.find(d => d.id === id);
@@ -749,20 +794,19 @@ function App() {
                              gold: p.gold + deposit.amount,
                              bankDeposits: p.bankDeposits.filter(d => d.id !== id)
                          }));
-                         addToast("Vade bozuldu, anapara iade edildi.", "info");
+                         addToast("Kasa kilidi açıldı, altın iade edildi.", "info");
                     }}
                     onClaimDeposit={(id) => {
                         const deposit = player.bankDeposits.find(d => d.id === id);
                         if(!deposit) return;
                         if(Date.now() < deposit.endTime) return;
                         
-                        const total = Math.floor(deposit.amount * (1 + deposit.interestRate));
                         setPlayer(p => ({
                              ...p,
-                             gold: p.gold + total,
+                             gold: p.gold + deposit.amount,
                              bankDeposits: p.bankDeposits.filter(d => d.id !== id)
                          }));
-                        addToast(`Vade doldu! ${total} Altın kazanıldı.`, "success");
+                        addToast(`Kasa süresi doldu! ${deposit.amount} Altın alındı.`, "success");
                     }}
                 />
             )}
@@ -772,12 +816,12 @@ function App() {
       </div>
       
       <nav className="md:hidden fixed bottom-0 left-0 w-full bg-slate-900 border-t border-slate-800 flex justify-around p-3 z-50 overflow-x-auto">
-         {[User, Map, Swords, ShoppingBag, Landmark, Hammer, Trophy].map((Icon, idx) => {
-             const views: View[] = ['character', 'expedition', 'arena', 'market', 'bank', 'blacksmith', 'leaderboard'];
+         {[User, Map, Skull, Swords, ShoppingBag, Landmark, Hammer, Trophy].map((Icon, idx) => {
+             const views: View[] = ['character', 'expedition', 'arena', 'pvp', 'market', 'bank', 'blacksmith', 'leaderboard'];
              return (
                 <button key={idx} onClick={() => setCurrentView(views[idx])} className={`flex flex-col items-center gap-1 text-xs min-w-[50px] ${currentView === views[idx] ? 'text-indigo-400' : 'text-slate-500'} relative`}>
                     <Icon size={20} />
-                    {views[idx] === 'arena' && arenaBattle.isFighting && <span className="absolute top-0 right-2 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
+                    {(views[idx] === 'arena' || views[idx] === 'pvp') && arenaBattle.isFighting && arenaBattle.mode === (views[idx] === 'arena' ? 'pve' : 'pvp') && <span className="absolute top-0 right-2 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>}
                 </button>
              );
          })}
