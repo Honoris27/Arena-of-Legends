@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Item, BlacksmithJob, Stats } from '../types';
 import { calculateUpgradeCost, calculateSuccessRate, calculateSalvageReturn, generateDynamicItem, INITIAL_BASE_ITEMS, INITIAL_MODIFIERS, INITIAL_MATERIALS, getFragmentCount, getBlacksmithTime, formatTime } from '../services/gameLogic';
 import { Hammer, Coins, ArrowUp, Recycle, Anvil, Clock, Check, ArrowRight } from 'lucide-react';
@@ -229,7 +229,10 @@ const CraftPanel: React.FC<{ inventory: Item[], learnedModifiers: string[], onSt
     const costSuffix = suffix?.fragmentCost || 0;
     const canAfford = prefixFragCount >= costPrefix && suffixFragCount >= costSuffix;
     
-    const previewItem = baseItem ? generateDynamicItem(1, [baseItem], INITIAL_MATERIALS, INITIAL_MODIFIERS, 'rare', prefix, suffix) : null;
+    const previewItem = useMemo(() => {
+        return baseItem ? generateDynamicItem(1, [baseItem], INITIAL_MATERIALS, INITIAL_MODIFIERS, 'rare', prefix, suffix) : null;
+    }, [baseItem, prefix, suffix]);
+
     const duration = getBlacksmithTime('craft', 1);
 
     const handleCraft = () => {

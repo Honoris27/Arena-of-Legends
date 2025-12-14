@@ -16,6 +16,17 @@ export type ItemRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 export type BonusType = 'FLAT' | 'PERCENT' | 'MULTIPLIER';
 export type GameMode = 'GLOBAL' | 'ARENA' | 'EXPEDITION' | 'BOSS';
 
+export interface SupportTicket {
+    id: string;
+    senderId: string;
+    senderName: string;
+    category: 'bug' | 'cheat' | 'suggestion' | 'complaint' | 'other';
+    subject: string;
+    message: string;
+    timestamp: number;
+    status: 'open' | 'closed';
+}
+
 // --- GLOBAL CONFIG (NEW) ---
 export interface GlobalConfig {
     startingLevel: number;
@@ -23,6 +34,7 @@ export interface GlobalConfig {
     startingStatPoints: number;
     startingStats: Stats;
     startingInventory: string[]; // IDs of BaseItems
+    supportTickets: SupportTicket[]; // Store tickets globally for this demo architecture
 }
 
 // --- COMPLEX MODIFIER TYPES (GDD) ---

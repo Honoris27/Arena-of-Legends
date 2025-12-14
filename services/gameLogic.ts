@@ -287,7 +287,8 @@ export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
     startingGold: 50,
     startingStatPoints: 0,
     startingStats: { STR: 10, AGI: 5, VIT: 10, INT: 5, LUK: 5 },
-    startingInventory: ['w1', 'a1'] 
+    startingInventory: ['w1', 'a1'],
+    supportTickets: []
 };
 
 // --- GENERATOR LOGIC ---
