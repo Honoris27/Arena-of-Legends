@@ -2,8 +2,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { Player, RankEntry, Enemy } from '../types';
 
-const SUPABASE_URL = 'https://kojxppjyhfhskbxhgfyr.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvanhwcGp5aGZoc2tieGhnZnlyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU2NTMzNDgsImV4cCI6MjA4MTIyOTM0OH0.NLSShPbLcdHXlxSLsKbLTRhmvdeBjccxf_CGoQ7OBbc';
+const SUPABASE_URL = 'https://cjubtpdwxczahrwvkziv.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqdWJ0cGR3eGN6YWhyd3Zreml2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU3MDczNzgsImV4cCI6MjA4MTI4MzM3OH0.TSGlGqJWF_5c4GlXXbe5PSXOgrVdEZPIwJsd4P4T6po';
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
