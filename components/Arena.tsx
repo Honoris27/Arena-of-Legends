@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Player, ArenaBattleState } from '../types';
-import { Swords, Skull, Trophy, AlertTriangle, ArrowRight } from 'lucide-react';
+import { Swords, Skull, Trophy, AlertTriangle, ArrowRight, Shield } from 'lucide-react';
 
 interface ArenaProps {
   player: Player;
@@ -14,166 +14,139 @@ interface ArenaProps {
 
 const Arena: React.FC<ArenaProps> = ({ player, isBusy, battleState, onSearch, onStart, onReset }) => {
   const { enemy, logs, isFighting, mode } = battleState;
-  const [selectedDepth, setSelectedDepth] = useState(1);
-
+  
   // Only show combat if we have an enemy AND we are in PVE mode
   const showCombat = enemy && mode === 'pve';
 
   return (
-    <div className="max-w-5xl mx-auto pb-20">
-       <div className="text-center mb-8">
-        <h2 className="text-4xl cinzel font-black text-amber-600 mb-2 drop-shadow-md">Karanlık Zindan</h2>
-        <p className="text-stone-400 font-serif italic">Yeraltının derinliklerine in, korkularını yen.</p>
-      </div>
-
+    <div className="max-w-6xl mx-auto pb-20">
+      
       {!showCombat ? (
-        <div className="bg-stone-900 border-2 border-stone-700 rounded-xl overflow-hidden relative shadow-2xl">
-           {/* Atmospheric Background */}
-           <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1519074069444-1ba4fff66d16?q=80&w=2000&auto=format&fit=crop')] bg-cover bg-center opacity-20 grayscale"></div>
-           
-           <div className="relative z-10 p-8 md:p-12 flex flex-col items-center">
-               
-               <div className="bg-stone-950/80 border border-stone-600 p-6 rounded-xl w-full max-w-2xl mb-8 backdrop-blur-sm">
-                   <h3 className="text-xl font-bold text-stone-200 mb-4 flex items-center justify-center gap-2 cinzel">
-                       <Skull size={24} className="text-red-600"/> Zindan Derinliği Seç
-                   </h3>
-                   
-                   <div className="flex justify-between items-center gap-2 mb-2 bg-stone-900 rounded-lg p-2 border border-stone-800">
-                        <button 
-                            disabled={selectedDepth <= 1}
-                            onClick={() => setSelectedDepth(d => d - 1)}
-                            className="p-2 bg-stone-800 hover:bg-stone-700 rounded disabled:opacity-30"
-                        >
-                            <ArrowRight className="rotate-180" size={20}/>
-                        </button>
-                        <div className="text-center px-4">
-                            <span className="text-4xl font-black cinzel text-amber-500">{selectedDepth}</span>
-                            <span className="text-xs text-stone-500 block uppercase tracking-widest">Seviye</span>
-                        </div>
-                        <button 
-                            disabled={selectedDepth >= 10} // Max depth 10 for safety
-                            onClick={() => setSelectedDepth(d => d + 1)}
-                            className="p-2 bg-stone-800 hover:bg-stone-700 rounded disabled:opacity-30"
-                        >
-                            <ArrowRight size={20}/>
-                        </button>
-                   </div>
+        <div className="parchment-panel p-6">
+           {/* Header Section */}
+           <div className="flex gap-4 mb-6 border-b-2 border-[#8b5a2b] pb-4">
+               <div className="w-32 h-32 border-4 border-[#5e3b1f] bg-[#1a0f0a] shrink-0 overflow-hidden">
+                   <img src="https://source.unsplash.com/random/200x200/?gladiator,warrior" className="w-full h-full object-cover sepia" />
+               </div>
+               <div className="flex-1">
+                   <h2 className="font-bold text-[#8a1c1c] text-lg bg-[#eaddcf] border border-[#8b5a2b] inline-block px-2 mb-2">Tanım</h2>
+                   <p className="text-sm text-[#3e2714] italic bg-[#f3e5ab] p-3 border border-[#8b5a2b] shadow-inner">
+                       Arenaya girer girmez, dehşetin ve ölümün kokusunu alacaksın. Senden önce bu kumların içinden ne efsaneler doğduğunu iyi bilmelisin.
+                       <br/><br/>
+                       İlerlemek için arenada "Kendi Statün" listesindeki senden daha iyi sıralaması olan birisine karşı zafer kazanmalısın.
+                   </p>
+               </div>
+           </div>
 
-                   <div className="grid grid-cols-2 gap-4 mt-6">
-                        <div className="bg-stone-900 p-3 rounded border border-stone-700 text-center">
-                            <div className="text-xs text-stone-500 uppercase font-bold">Düşman Seviyesi</div>
-                            <div className="text-red-400 font-bold">~{player.level + (selectedDepth * 2) - 1}</div>
-                        </div>
-                        <div className="bg-stone-900 p-3 rounded border border-stone-700 text-center">
-                            <div className="text-xs text-stone-500 uppercase font-bold">Ödül Çarpanı</div>
-                            <div className="text-green-400 font-bold">x{(1 + (selectedDepth * 0.2)).toFixed(1)}</div>
-                        </div>
-                   </div>
+           <h3 className="text-center font-cinzel font-bold text-xl text-[#3e2714] mb-2">Tanrıların İyilik Ligi</h3>
+           <p className="text-center text-xs text-[#5e3b1f] mb-6 italic">Kim buraya kadar gelebilmişse kendisine tanrı denilebilir - arenanın tanrısı...</p>
 
-                   <div className="mt-4 text-xs text-stone-400 text-center bg-red-900/10 p-2 rounded border border-red-900/20">
-                       <AlertTriangle size={12} className="inline mr-1 text-red-500"/>
-                       Derinlik arttıkça yaratıklar güçlenir ve ölüm riski artar.
-                   </div>
+           <div className="flex flex-col md:flex-row gap-4">
+               {/* Left Table: Top 5 */}
+               <div className="flex-1 border-2 border-[#8b5a2b] bg-[#f3e5ab]">
+                   <div className="bg-[#c5a059] text-[#3e2714] font-bold p-1 border-b border-[#8b5a2b] text-sm px-2">En İyi 5</div>
+                   <table className="w-full text-xs text-[#3e2714]">
+                       <thead>
+                           <tr className="border-b border-[#8b5a2b] bg-[#eaddcf]">
+                               <th className="p-1 text-left">Sıra</th>
+                               <th className="p-1 text-left">İsim</th>
+                               <th className="p-1 text-right">Altın</th>
+                           </tr>
+                       </thead>
+                       <tbody>
+                           {[1,2,3,4,5].map(rank => (
+                               <tr key={rank} className="border-b border-[#8b5a2b]/30 last:border-0 hover:bg-[#fff9e6]">
+                                   <td className="p-1 font-bold">{rank} <Trophy size={10} className="inline text-yellow-600"/></td>
+                                   <td className="p-1 font-bold text-[#8a1c1c] underline cursor-pointer">Gladyatör {rank}</td>
+                                   <td className="p-1 text-right font-mono">{(6000 - rank*500).toLocaleString()}</td>
+                               </tr>
+                           ))}
+                       </tbody>
+                   </table>
                </div>
 
-               <button 
-                onClick={() => onSearch(selectedDepth * 2)} // Pass level modifier
-                disabled={isBusy}
-                className="group relative px-10 py-5 bg-gradient-to-r from-red-800 to-red-600 hover:from-red-700 hover:to-red-500 text-white font-bold rounded shadow-lg shadow-red-900/50 transition-all transform hover:scale-105"
-               >
-                 <span className="flex items-center gap-3 text-xl cinzel tracking-wider">
-                    <Swords size={28} />
-                    ZİNDANA GİR
-                 </span>
-               </button>
+               {/* Right Table: Own Position */}
+               <div className="flex-1 border-2 border-[#8b5a2b] bg-[#f3e5ab]">
+                   <div className="bg-[#c5a059] text-[#3e2714] font-bold p-1 border-b border-[#8b5a2b] text-sm px-2">Kendi Pozisyonun</div>
+                   <table className="w-full text-xs text-[#3e2714]">
+                       <thead>
+                           <tr className="border-b border-[#8b5a2b] bg-[#eaddcf]">
+                               <th className="p-1 text-left">Sıra</th>
+                               <th className="p-1 text-left">İsim</th>
+                               <th className="p-1 text-center">Eylem</th>
+                           </tr>
+                       </thead>
+                       <tbody>
+                           {[player.rank-2, player.rank-1, player.rank, player.rank+1, player.rank+2].map(rank => {
+                               if(rank < 6) return null;
+                               const isMe = rank === player.rank;
+                               return (
+                               <tr key={rank} className={`border-b border-[#8b5a2b]/30 last:border-0 ${isMe ? 'bg-yellow-200' : 'hover:bg-[#fff9e6]'}`}>
+                                   <td className="p-1 font-bold">{rank}</td>
+                                   <td className={`p-1 font-bold ${isMe ? 'text-[#3e2714]' : 'text-[#8a1c1c] underline cursor-pointer'}`}>
+                                       {isMe ? player.name : `Rakip ${rank}`}
+                                   </td>
+                                   <td className="p-1 text-center">
+                                       {!isMe && (
+                                           <button onClick={() => onSearch(0)} className="roman-btn px-2 py-0.5 text-[10px]">
+                                               <Swords size={10}/>
+                                           </button>
+                                       )}
+                                   </td>
+                               </tr>
+                           )})}
+                       </tbody>
+                   </table>
+               </div>
            </div>
+
+           {/* Search Box */}
+           <div className="mt-6 bg-[#c5a059]/30 border border-[#8b5a2b] p-3 rounded flex items-center gap-4">
+               <div className="flex-1 text-xs text-[#3e2714]">
+                   <strong>Belirli Bir Oyuncuyu Ara (Ücreti: 10 Altın)</strong>
+                   <p>Birisi vergisini mi ödemedi? Düşmanı arenada yenmek için düelloya davet et!</p>
+               </div>
+               <div className="flex gap-2">
+                   <input className="border border-[#8b5a2b] bg-[#f3e5ab] p-1 text-xs text-[#3e2714] placeholder-[#8b5a2b]/50" placeholder="İsim:" />
+                   <button className="roman-btn px-4 py-1 text-xs">Git!</button>
+               </div>
+           </div>
+
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative animate-fade-in">
-            {/* Player Card */}
-            <div className={`bg-stone-900 border-2 ${isFighting ? 'border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.3)]' : 'border-stone-600'} rounded-xl p-6 transition-all duration-300 relative overflow-hidden`}>
-                <div className="absolute top-0 right-0 p-2 opacity-10"><Trophy size={100} className="text-blue-500"/></div>
-                <h3 className="text-xl font-bold text-blue-400 mb-1 cinzel">{player.name}</h3>
-                <p className="text-xs text-stone-500 mb-4 font-serif">Seviye {player.level} Gladyatör</p>
-                
-                <div className="relative h-6 bg-stone-950 rounded border border-stone-700 overflow-hidden mb-2">
-                    <div className="h-full bg-gradient-to-r from-blue-700 to-blue-500 transition-all duration-300" style={{ width: `${Math.max(0, (player.hp / player.maxHp) * 100)}%` }}></div>
-                    <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white drop-shadow-md">
-                        {player.hp} / {player.maxHp} HP
-                    </div>
+        /* COMBAT VIEW (Keep similar but wrapped in Parchment) */
+        <div className="parchment-panel p-6 flex flex-col items-center">
+            <h3 className="cinzel font-bold text-2xl mb-6 text-[#8a1c1c]">ARENA SAVAŞI</h3>
+            
+            <div className="flex justify-between w-full max-w-2xl mb-8">
+                <div className="text-center">
+                    <div className="w-24 h-24 border-4 border-[#5e3b1f] bg-black mb-2"><img src={player.avatarUrl} className="w-full h-full object-cover"/></div>
+                    <div className="font-bold text-[#3e2714]">{player.name}</div>
+                    <div className="h-2 w-24 bg-[#1a0f0a] border border-[#5e3b1f]"><div className="h-full bg-red-600" style={{width: `${(player.hp/player.maxHp)*100}%`}}></div></div>
+                </div>
+                <div className="flex items-center justify-center">
+                    <Swords size={48} className="text-[#8a1c1c] animate-pulse"/>
+                </div>
+                <div className="text-center">
+                    <div className="w-24 h-24 border-4 border-[#5e3b1f] bg-black mb-2 flex items-center justify-center"><Skull className="text-red-500" size={48}/></div>
+                    <div className="font-bold text-[#8a1c1c]">{enemy!.name}</div>
+                    <div className="h-2 w-24 bg-[#1a0f0a] border border-[#5e3b1f]"><div className="h-full bg-red-600" style={{width: `${(enemy!.hp/enemy!.maxHp)*100}%`}}></div></div>
                 </div>
             </div>
 
-            {/* VS Badge - Added pointer-events-none to prevent blocking clicks */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 hidden md:block pointer-events-none">
-                <div className="bg-stone-950 border-4 border-amber-700 rounded-full w-20 h-20 flex items-center justify-center font-black text-3xl cinzel text-red-600 shadow-[0_0_30px_rgba(220,38,38,0.5)] animate-pulse-slow">VS</div>
+            <div className="w-full max-w-2xl bg-[#eaddcf] border border-[#8b5a2b] h-48 overflow-y-auto p-4 font-mono text-xs text-[#3e2714] mb-4 shadow-inner">
+                {logs.map((log, i) => <div key={i} className="border-b border-[#8b5a2b]/20 pb-1 mb-1">{log}</div>)}
             </div>
 
-            {/* Enemy Card */}
-            <div className={`bg-stone-900 border-2 ${isFighting ? 'border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.3)]' : 'border-stone-600'} rounded-xl p-6 transition-all duration-300 relative overflow-hidden`}>
-                <div className="flex justify-between items-start z-10 relative">
-                    <div>
-                        <h3 className="text-xl font-bold text-red-500 mb-1 flex items-center gap-2 cinzel">
-                            {enemy!.name}
-                        </h3>
-                        <p className="text-xs text-stone-500 mb-4 font-serif italic">"{enemy!.description}"</p>
-                    </div>
-                    <Skull className="text-red-900/50 w-16 h-16 opacity-50" />
-                </div>
-                
-                <div className="relative h-6 bg-stone-950 rounded border border-stone-700 overflow-hidden mb-2 z-10">
-                    <div className="h-full bg-gradient-to-r from-red-700 to-red-500 transition-all duration-300" style={{ width: `${Math.max(0, (enemy!.hp / enemy!.maxHp) * 100)}%` }}></div>
-                    <div className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white drop-shadow-md">
-                        {enemy!.hp} / {enemy!.maxHp} HP
-                    </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-2 text-sm text-stone-400 z-10 relative bg-stone-950/50 p-2 rounded">
-                    <div>Seviye: <span className="text-stone-200 font-bold">{enemy!.level}</span></div>
-                    <div>Güç: <span className="text-stone-200 font-bold">{enemy!.stats.STR}</span></div>
-                </div>
-            </div>
-
-            {/* Action Area */}
-            <div className="md:col-span-2 flex flex-col items-center mt-4">
-                {!isFighting && logs.length === 0 && (
-                    <button 
-                        onClick={onStart}
-                        className="px-16 py-4 bg-gradient-to-r from-amber-700 to-yellow-600 hover:from-amber-600 hover:to-yellow-500 text-stone-900 font-black rounded text-xl shadow-[0_0_20px_rgba(234,179,8,0.4)] cinzel tracking-widest animate-bounce-short border border-yellow-400"
-                    >
-                        SALDIR
-                    </button>
-                )}
-
-                {/* Combat Log */}
-                <div className="w-full bg-stone-950/80 border border-stone-700 rounded-lg p-4 h-64 overflow-y-auto font-mono text-sm space-y-2 mt-6 flex flex-col-reverse shadow-inner custom-scrollbar">
-                    {logs.length === 0 ? (
-                        <div className="h-full flex items-center justify-center text-stone-600 italic">
-                            Savaş başlamak üzere...
-                        </div>
-                    ) : (
-                        [...logs].reverse().map((log, idx) => (
-                            <div key={idx} className={`
-                                border-b border-stone-800 pb-1
-                                ${log.includes('KAZANDIN') ? 'text-green-400 font-bold text-base bg-green-900/20 p-2 rounded border-green-800' : ''}
-                                ${log.includes('KAYBETTİN') ? 'text-red-400 font-bold text-base bg-red-900/20 p-2 rounded border-red-800' : ''}
-                                ${!log.includes('KAZANDIN') && !log.includes('KAYBETTİN') ? 'text-stone-300' : ''}
-                            `}>
-                                <span className="opacity-50 mr-2 text-xs">[{idx+1}]</span> {log}
-                            </div>
-                        ))
-                    )}
-                </div>
-
-                {!isFighting && logs.length > 0 && (
-                     <button 
-                        onClick={onReset}
-                        className="mt-6 px-8 py-3 bg-stone-700 hover:bg-stone-600 text-stone-200 font-bold rounded shadow-lg border border-stone-500 cinzel"
-                    >
-                        Zindana Dön
-                    </button>
-                )}
-            </div>
+            {!isFighting ? (
+                logs.length === 0 ? (
+                    <button onClick={onStart} className="roman-btn px-8 py-2 text-lg">SALDIR</button>
+                ) : (
+                    <button onClick={onReset} className="roman-btn px-8 py-2 text-lg">Geri Dön</button>
+                )
+            ) : (
+                <div className="text-[#8a1c1c] font-bold animate-pulse">Savaş Sürüyor...</div>
+            )}
         </div>
       )}
     </div>
